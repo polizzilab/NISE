@@ -1,7 +1,10 @@
+# Neural Iterative Selection Expansion (NISE)
+
+Jointly optimize the sequence and structure of a protein-ligand binding pose with iterative selection-expansion.
 
 ### Installing NISE Environment
 
-The NISE conda environment contains dependencies for both LASErMPNN and Boltz-1.
+The NISE conda environment contains dependencies for both LASErMPNN and Boltz-1:
 
 1) Install conda environment
 
@@ -20,3 +23,8 @@ python setup.py build_ext --inplace --force
 pip install -Ue .
 ```
 
+### TODO:
+
+- [ ] Upload hetdict somewhere.
+- [ ] Add reduce hetdict injection code.
+- [ ] 
