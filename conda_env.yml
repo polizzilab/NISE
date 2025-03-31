@@ -1,0 +1,33 @@
+name: nise
+channels:
+  - pytorch
+  - nvidia
+  - pyg
+  - conda-forge
+  - defaults
+dependencies:
+- python>=3.8
+- pip
+- pytorch::pytorch
+- nvidia::cudatoolkit
+- pyg::pytorch-scatter
+- pyg::pytorch-cluster
+- scipy
+- numpy
+- pandas
+- rdkit
+- scikit-learn
+- h5py
+- pytest
+- ProDy
+- matplotlib
+- seaborn
+- jupyter
+- plotly
+- pip:
+  - pykeops
+  - logomaker
+  - wandb
+  - tqdm
+  - boltz
+  - Flask

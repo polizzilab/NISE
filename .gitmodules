@@ -1,6 +1,3 @@
 [submodule "LASErMPNN"]
 	path = LASErMPNN
 	url = git@github.com:polizzilab/LASErMPNN.git
-[submodule "boltz"]
-	path = boltz
-	url = git@github.com:jwohlwend/boltz.git
