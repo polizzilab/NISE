@@ -31,3 +31,4 @@ dependencies:
   - tqdm
   - boltz
   - Flask
+  - rdkit-to-params

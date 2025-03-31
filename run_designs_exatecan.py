@@ -89,13 +89,12 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     AllChem.ComputeGasteigerCharges(pdb_mol)
     Chem.MolToMolFile(pdb_mol, str(sdf_path.resolve()))
 
-    Chem.MolToPDBFile(pdb_mol, 'test.pdb')
-
-    B = pr.parsePDB('test.pdb')
-    B.setChids(['L' for _ in range(len(ligand.getResnames()))])
-    B.setResnums([1 for _ in range(len(ligand.getResnames()))])
-    A = input_protein.select('not hetero').copy() + B
-    pr.writePDB('test2.pdb', A)
+    # Chem.MolToPDBFile(pdb_mol, 'test.pdb')
+    # B = pr.parsePDB('test.pdb')
+    # B.setChids(['L' for _ in range(len(ligand.getResnames()))])
+    # B.setResnums([1 for _ in range(len(ligand.getResnames()))])
+    # A = input_protein.select('not hetero').copy() + B
+    # pr.writePDB('test2.pdb', A)
 
     ligname = lignames_set.pop()
     p = Params.from_mol(pdb_mol, name=ligname)
@@ -464,7 +463,9 @@ if __name__ == "__main__":
         input_dir = Path('./debug/').resolve(),
 
         ligand_3lc = 'EXA', # Should match CCD if using reduce.
+        # Choose atom names to ignore during RMSD calculation
         ligand_rmsd_mask_atoms = {'C19', 'C24'},
+        # Choose atom names to ignore during burial calculation.
         ligand_burial_mask_atoms = {'C17', 'C23', 'C9', 'C10', 'C7', 'C3', 'N3', 'C1', 'C5', 'O3', 'C2', 'C4'},
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = 'CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O',
