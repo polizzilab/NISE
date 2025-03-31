@@ -6,27 +6,159 @@ import pathlib
 import asyncio
 import warnings
 from typing import *
+from collections.abc import Mapping
 from dataclasses import asdict, replace
 
 
 import torch
 import numpy as np
+from Bio import SeqIO
 from tqdm import tqdm
-#  from aiofile import async_open
+from rdkit.Chem.rdchem import Mol
 import torch.nn.functional as F
 
+#  from aiofile import async_open
 # Import Boltz-1 dependencies.
 # CURR_DIR_PATH = str(pathlib.Path(os.path.abspath(__file__)).parent.parent.absolute())
 
 from boltz.model.model import Boltz1
 from boltz.main import BoltzDiffusionParams
-from boltz.data.parse.fasta import parse_fasta
+# from boltz.data.parse.fasta import parse_fasta
 from boltz.data import const
 from boltz.data.module.inference import BoltzTokenizer, BoltzFeaturizer, Input, collate
 from boltz.data.types import Manifest, Record, StructureInfo, ChainInfo, Structure, Interface
 from boltz.data.write.pdb import to_pdb
+from boltz.data.parse.schema import parse_boltz_schema
+from boltz.data.types import Target
 
 warnings.filterwarnings("ignore")
+
+
+def parse_fasta(fasta_path_or_stream: Union[os.PathLike, Tuple[io.StringIO, str]], ccd: Mapping[str, Mol]) -> Target:  # noqa: C901
+    """Parse a fasta file.
+
+    The name of the fasta file is used as the name of this job.
+    We rely on the fasta record id to determine the entity type.
+
+    > CHAIN_ID|ENTITY_TYPE|MSA_ID
+    SEQUENCE
+    > CHAIN_ID|ENTITY_TYPE|MSA_ID
+    ...
+
+    Where ENTITY_TYPE is either protein, rna, dna, ccd or smiles,
+    and CHAIN_ID is the chain identifier, which should be unique.
+    The MSA_ID is optional and should only be used on proteins.
+
+    Parameters
+    ----------
+    fasta_file : Path
+        Path to the fasta file.
+    ccd : Dict
+        Dictionary of CCD components.
+
+    Returns
+    -------
+    Target
+        The parsed target.
+
+    """
+    # Read fasta file or data from stream.
+    if isinstance(fasta_path_or_stream, Tuple):
+        fasta_path_or_stream, name = fasta_path_or_stream
+        records = list(SeqIO.parse(fasta_path_or_stream, "fasta"))
+    else:
+        with fasta_path_or_stream.open("r") as f:
+            records = list(SeqIO.parse(f, "fasta"))
+        name = fasta_path_or_stream.stem
+
+    # Make sure all records have a chain id and entity
+    for seq_record in records:
+        if "|" not in seq_record.id:
+            msg = f"Invalid record id: {seq_record.id}"
+            raise ValueError(msg)
+
+        header = seq_record.id.split("|")
+        assert len(header) >= 2, f"Invalid record id: {seq_record.id}"
+
+        chain_id, entity_type = header[:2]
+        if entity_type.lower() not in {"protein", "dna", "rna", "ccd", "smiles"}:
+            msg = f"Invalid entity type: {entity_type}"
+            raise ValueError(msg)
+        if chain_id == "":
+            msg = "Empty chain id in input fasta!"
+            raise ValueError(msg)
+        if entity_type == "":
+            msg = "Empty entity type in input fasta!"
+            raise ValueError(msg)
+
+    # Convert to yaml format
+    sequences = []
+    for seq_record in records:
+        # Get chain id, entity type and sequence
+        header = seq_record.id.split("|")
+        chain_id, entity_type = header[:2]
+        if len(header) == 3 and header[2] != "":
+            assert (
+                entity_type.lower() == "protein"
+            ), "MSA_ID is only allowed for proteins"
+            msa_id = header[2]
+        else:
+            msa_id = None
+
+        entity_type = entity_type.upper()
+        seq = str(seq_record.seq)
+
+        if entity_type == "PROTEIN":
+            molecule = {
+                "protein": {
+                    "id": chain_id,
+                    "sequence": seq,
+                    "modifications": [],
+                    "msa": msa_id,
+                },
+            }
+        elif entity_type == "RNA":
+            molecule = {
+                "rna": {
+                    "id": chain_id,
+                    "sequence": seq,
+                    "modifications": [],
+                },
+            }
+        elif entity_type == "DNA":
+            molecule = {
+                "dna": {
+                    "id": chain_id,
+                    "sequence": seq,
+                    "modifications": [],
+                }
+            }
+        elif entity_type.upper() == "CCD":
+            molecule = {
+                "ligand": {
+                    "id": chain_id,
+                    "ccd": seq,
+                }
+            }
+        elif entity_type.upper() == "SMILES":
+            molecule = {
+                "ligand": {
+                    "id": chain_id,
+                    "smiles": seq,
+                }
+            }
+
+        sequences.append(molecule)
+
+    data = {
+        "sequences": sequences,
+        "bonds": [],
+        "version": 1,
+    }
+
+    print(data, name)
+
+    return parse_boltz_schema(name, data, ccd)
 
 def load_model_and_modules(device, predict_args):
     """
@@ -53,7 +185,7 @@ def load_model_and_modules(device, predict_args):
 def get_fasta_string(protein_sequence, smiles):
     target_fasta = f">A|protein|empty\n{protein_sequence}"
     if smiles is not None:
-        target_fasta += "\n>B|smiles\n{smiles}\n"
+        target_fasta += f"\n>B|smiles\n{smiles}\n"
     return target_fasta
 
 
@@ -219,7 +351,7 @@ def create_pdb_strings(
                 )
                 chain_info.append(new_chain_info)
 
-            pdb_strs.append(to_pdb(new_structure, plddt.tolist()))
+            pdb_strs.append(to_pdb(new_structure, plddt))
     return pdb_strs
 
 

@@ -17,9 +17,9 @@ dependencies:
 - pandas
 - rdkit
 - scikit-learn
+- gxx_linux-64
 - h5py
 - pytest
-- ProDy
 - matplotlib
 - seaborn
 - jupyter

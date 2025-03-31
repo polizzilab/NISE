@@ -2,7 +2,7 @@ import sys
 import traceback
 from flask import Flask, request, jsonify
 
-from batch_inference import load_model_and_modules, predict_structures, create_pdb_strings
+from boltz_batch_inference import load_model_and_modules, predict_structures, create_pdb_strings
 app = Flask(__name__)
 
 @app.route('/', methods=['GET'])

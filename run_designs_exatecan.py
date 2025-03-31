@@ -116,7 +116,8 @@ def setup_boltz_workers(
         worker_process = subprocess.Popen([
             str(boltz_python_path), str(boltz_flask_server_script_path),
             str(port_idx), str(boltz_num_recycles), str(boltz_num_diffusion_steps), ligand_smiles, boltz_inference_device[idx]
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ])
+        # ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         worker_processes.append((worker_process, worker_port))
     
     print('Waiting for Boltz workers to boot...')
@@ -187,7 +188,7 @@ class DesignCampaign:
         self.sampling_metadata['min_ligand_rmsd'] = float('inf')
 
         self.input_backbones_path, self.sampling_dataframe_path, self.sampled_backbones_path, self.sdf_path, self.params_path = handle_directory_creation(input_dir, model_checkpoint)
-        self.model, _, self.model_params = load_model_from_parameter_dict(model_checkpoint, torch.device(laser_inference_device))
+        self.model, self.model_params = load_model_from_parameter_dict(model_checkpoint, torch.device(laser_inference_device))
 
         # Set model to eval mode, enable inference dropout if specified.
         self.model.eval()
@@ -452,6 +453,9 @@ if __name__ == "__main__":
         'disable_pbar': True,
     }
 
+    python_path = Path(shutil.which('python'))
+    assert python_path.exists(), f'Issue with python path, {python_path}'
+
     params = dict(
         debug = (debug := True),
         use_wandb = (use_wandb := (True and not debug)),
@@ -475,15 +479,16 @@ if __name__ == "__main__":
         sequences_sampled_at_once = 30,
 
         worker_init_port = 12389,
-        boltz_python_path = Path('/nfs/polizzi/bfry/miniconda3/envs/boltz/bin/python3.9'),
-        boltz_flask_server_script_path = Path('/nfs/polizzi/bfry/programs/boltz_tinker/batch_inference_flask_server.py'),
+        # boltz_python_path = Path('/nfs/polizzi/bfry/miniconda3/envs/boltz/bin/python3.9'),
+        boltz_python_path = python_path,
+        boltz_flask_server_script_path = Path(CURR_DIR_PATH) / 'utility_scripts/boltz_batch_inference_flask_server.py',
         boltz_num_recycles = 3 if not debug else 1,
         boltz_num_diffusion_steps = 200 if not debug else 100,
         boltz_num_predicted_per_batch = 8,
 
         laser_inference_device = 'cuda:0',
         laser_inference_dropout = True,
-        boltz_inference_device = ['cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7'],
+        boltz_inference_device = ['cuda:0', 'cuda:2'],
     )
     if use_wandb:
         wandb.init(project='design-campaigns', entity='benf549', config=params)
