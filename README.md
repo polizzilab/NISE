@@ -32,7 +32,7 @@ tar -xvf hetdict.tar.gz
 
 1) Create a PDB file containing your PROTONATED input ligand with CONECT records encoding bonds:
 If you have a non-protonated ligand/are missing conect records, run `protonate_and_add_conect_records.py {input_path}.pdb {smiles_string} {output_path}.pdb`.
-WARNING: This will rename the ligand atoms.
+WARNING: This will rename the ligand atoms, ligand chain, and resnum.
 
 
 2) Inject your ligand into REDUCE hetdict by running `inject_ligand_into_hetdict.py {output_path}.pdb`
@@ -44,11 +44,24 @@ WARNING: This will rename the ligand atoms.
 4) Update the params dictionary at the bottom of `./run_nise.py` with the path to your new input dir ex: (`input_dir = Path('./debug/input_backbones/'`).
 
 
-5) Update burial and RMSD atom sets and smiles string.
+5) Update burial and RMSD atom sets and smiles string in `./run_nise.py`
+
+To test out an example run:
+
+```bash
+
+./protonate_and_add_conect_records.py ./example_pdbs/16_pose26_en_-5p044_no_CG_top1_of_1_n4_00374_looped_master_6_gly_0001_trim_H_98.pdb "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O" ./example_pdbs/test_input_protonated_conect.pdb
+
+./inject_ligand_into_hetdict.py ./example_pdbs/test_input_protonated_conect.pdb
+
+mkdir -p ./debug/input_backbones/
+
+cp ./example_pdbs/test_input_protonated_conect.pdb ./debug/input_backbones/
+
+./run_nise.py
+```
 
 
 ### TODO:
 
-- [ ] Upload hetdict somewhere.
-- [ ] Add reduce hetdict injection code.
-- [ ] 
+- [ ] checkout boltz-ext repo to improve ligand conformers.

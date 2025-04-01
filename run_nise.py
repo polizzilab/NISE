@@ -31,6 +31,7 @@ from run_batch_inference import _run_inference, output_protein_structure, output
 from utility_scripts.burial_calc import compute_fast_ligand_burial_mask
 from utility_scripts.calc_symmetry_aware_rmsd import _main as calc_rmsd
 
+
 def check_input(dir_path: Path, model_weights_path: Path):
     if not dir_path.exists():
         raise FileNotFoundError(f"Path {dir_path} does not exist.")
@@ -75,6 +76,8 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     ligand_string = pdb_stream.getvalue()
 
     lignames_set = set(ligand.getResnames())
+    ligatomnames_set = set(ligand.getNames())
+    assert len(ligatomnames_set) == len(ligand.getNames()), f'Make sure input has unique atom names! Try running the ligand preparation script.'
 
     # Write ligand to PDB file.
     pdb_path = Path(str(sdf_path.resolve()).rsplit('.')[0] + '.pdb')
@@ -115,8 +118,8 @@ def setup_boltz_workers(
         worker_process = subprocess.Popen([
             str(boltz_python_path), str(boltz_flask_server_script_path),
             str(port_idx), str(boltz_num_recycles), str(boltz_num_diffusion_steps), ligand_smiles, boltz_inference_device[idx]
-        ])
-        # ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         worker_processes.append((worker_process, worker_port))
     
     print('Waiting for Boltz workers to boot...')
@@ -161,7 +164,8 @@ class DesignCampaign:
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_device, boltz_python_path, boltz_flask_server_script_path, 
-        boltz_num_recycles, boltz_num_diffusion_steps, ligand_smiles, worker_init_port, boltz_num_predicted_per_batch, **kwargs
+        boltz_num_recycles, boltz_num_diffusion_steps, ligand_smiles, worker_init_port, boltz_num_predicted_per_batch, 
+        keep_input_backbone_in_queue, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -169,6 +173,7 @@ class DesignCampaign:
         self.rmsd_use_chirality = rmsd_use_chirality
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
         self.self_consistency_protein_rmsd_threshold = self_consistency_protein_rmsd_threshold
+        self.keep_input_backbone_in_queue = keep_input_backbone_in_queue 
 
         self.num_iterations = num_iterations
         self.sequences_sampled_per_backbone = sequences_sampled_per_backbone
@@ -197,9 +202,13 @@ class DesignCampaign:
                     module.train()
 
         # Set path and priority for input backbones.
-        self.backbone_queue = [(x, torch.inf) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
+        if self.keep_input_backbone_in_queue:
+            self.backbone_queue = [(x, torch.inf) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
+        else:
+            self.backbone_queue = [(x, 0) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
+
         if len(self.backbone_queue) > 1:
-            raise NotImplementedError(f"More than one input backbone not currently supported.")
+            raise NotImplementedError(f"Using more than one input backbone not yet implemented.")
 
         construct_helper_files(self.sdf_path, self.params_path, self.backbone_queue[0][0], ligand_smiles)
 
@@ -242,8 +251,7 @@ class DesignCampaign:
         
         return sampled_proteins, sampled_sequences
 
-    def identify_backbone_candidates(self, boltz_output_subdir: Path, laser_output_subdir: Path):
-
+    def identify_backbone_candidates(self, boltz_output_subdir: Path, laser_output_subdir: Path, reduce_executable_path: Path, hetdict_path: Path):
         ligand_rmsds = []
         protein_rmsds = []
         ligand_plddts = []
@@ -293,13 +301,15 @@ class DesignCampaign:
             # Check ligand burial in boltz structure.
             ligand_heavy_atom_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[burial_mask], num_rays=3)
             
-            if ligand_heavy_atom_mask.all().item():
+            if ligand_heavy_atom_mask.all().item() or self.debug:
                 ligand_is_buried.append(True)
                 if (ligand_rmsd < self.self_consistency_ligand_rmsd_threshold and protein_rmsd < self.self_consistency_protein_rmsd_threshold) or self.debug:
 
-                    subprocess.run(f'/nfs/polizzi/bfry/programs/reduce/reduce -DB test_hetdict.txt -DROP_HYDROGENS_ON_ATOM_RECORDS -BUILD {boltz} > {boltz}_', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    # Protonate the Boltz output with remapped atom names.
+                    subprocess.run(f'{reduce_executable_path} -DB {hetdict_path} -DROP_HYDROGENS_ON_ATOM_RECORDS -BUILD {boltz} > {boltz}_', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     shutil.move(f'{boltz}_', boltz)
 
+                    # Track the new backbone.
                     self.backbone_queue.append((boltz, boltz_bfacs))
             else:
                 ligand_is_buried.append(False)
@@ -325,7 +335,7 @@ class DesignCampaign:
         logs['mean_laser_bs_score'] = dataframe['laser_bs_nll'].mean()
 
         try:
-            logs['max_sampled_backbone_priority'] = min(self.backbone_queue[1:], key=lambda x: x[1])[1]
+            logs['max_sampled_backbone_priority'] = max(self.backbone_queue[1:], key=lambda x: x[1])[1]
         except:
             logs['max_sampled_backbone_priority'] = float('-inf')
 
@@ -375,7 +385,7 @@ def compute_laser_scores(protein_sequences_list: Sequence[pr.AtomGroup]) -> Tupl
     return full_sequence_scores, binding_site_scores
 
 
-def main(use_wandb, **kwargs):
+def main(use_wandb, reduce_hetdict_path, reduce_executable_path, **kwargs):
 
     design_campaign = DesignCampaign(**kwargs)
 
@@ -418,7 +428,7 @@ def main(use_wandb, **kwargs):
             pr.writePDB(str(boltz_output_path), boltz_pred_structure)
 
         # Identify any new backbone candidates.
-        sorted_designs_laser, sorted_designs_rosetta, ligand_rmsds, protein_rmsds, ligand_plddts, ligand_is_buried = design_campaign.identify_backbone_candidates(boltz_output_subdir, laser_output_subdir)
+        sorted_designs_laser, sorted_designs_rosetta, ligand_rmsds, protein_rmsds, ligand_plddts, ligand_is_buried = design_campaign.identify_backbone_candidates(boltz_output_subdir, laser_output_subdir, reduce_executable_path, reduce_hetdict_path)
 
         with open(sampling_subdir / 'backbone_queue.txt', 'w') as f:
             f.write('\n'.join([f"{x[1]}\t{x[0]}" for x in design_campaign.backbone_queue]))
@@ -447,7 +457,7 @@ def main(use_wandb, **kwargs):
 if __name__ == "__main__":
 
     laser_sampling_params = {
-        'sequence_temp': 0.2, 'first_shell_sequence_temp': 1.0, 
+        'sequence_temp': 0.2, 'first_shell_sequence_temp': 0.5, 
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
         'disable_pbar': True,
     }
@@ -456,40 +466,44 @@ if __name__ == "__main__":
     assert python_path.exists(), f'Issue with python path, {python_path}'
 
     params = dict(
-        debug = (debug := True),
+        debug = (debug := False),
         use_wandb = (use_wandb := (True and not debug)),
         input_dir = Path('./debug/').resolve(),
 
-        model_checkpoint = Path('/nfs/polizzi/bfry/ligandmpnn_split_last_chance_edge_vecs_optstep_55000.pt'),
-
+        #####################################################
         ligand_3lc = 'EXA', # Should match CCD if using reduce.
         # Choose atom names to ignore during RMSD calculation
-        ligand_rmsd_mask_atoms = {'C19', 'C24'},
+        ligand_rmsd_mask_atoms = {'C20', 'C21'},
         # Choose atom names to ignore during burial calculation.
-        ligand_burial_mask_atoms = {'C17', 'C23', 'C9', 'C10', 'C7', 'C3', 'N3', 'C1', 'C5', 'O3', 'C2', 'C4'},
-        laser_sampling_params = laser_sampling_params,
+        ligand_burial_mask_atoms = {'N2', 'C5', 'C6', 'C7', 'O1', 'C2', 'C4', 'C8', 'C15', 'C14', 'C9', 'C3'},
         ligand_smiles = 'CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O',
+        #####################################################
 
+        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
+        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(),
+        reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'),
+
+        keep_input_backbone_in_queue = False,
         rmsd_use_chirality = True,
         self_consistency_ligand_rmsd_threshold = 1.5,
         self_consistency_protein_rmsd_threshold = 1.5,
 
         num_iterations = 100,
         num_top_backbones_per_round = 3,
-        sequences_sampled_per_backbone = 100 if not debug else 8,
+        sequences_sampled_per_backbone = 64 if not debug else 8,
         sequences_sampled_at_once = 30,
+        laser_sampling_params = laser_sampling_params,
 
         worker_init_port = 12389,
-        # boltz_python_path = Path('/nfs/polizzi/bfry/miniconda3/envs/boltz/bin/python3.9'),
         boltz_python_path = python_path,
         boltz_flask_server_script_path = Path(CURR_DIR_PATH) / 'utility_scripts/boltz_batch_inference_flask_server.py',
-        boltz_num_recycles = 3 if not debug else 1,
-        boltz_num_diffusion_steps = 200 if not debug else 100,
-        boltz_num_predicted_per_batch = 8,
+        boltz_num_recycles = 10,
+        boltz_num_diffusion_steps = 200,
+        boltz_num_predicted_per_batch = 1,
 
         laser_inference_device = 'cuda:0',
         laser_inference_dropout = True,
-        boltz_inference_device = ['cuda:0', 'cuda:2'],
+        boltz_inference_device = ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:6', 'cuda:7'],
     )
     if use_wandb:
         wandb.init(project='design-campaigns', entity='benf549', config=params)

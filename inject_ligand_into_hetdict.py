@@ -110,7 +110,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inject ligand information into a hetdict file.')
     parser.add_argument('input_pdb', type=str, help='Path to input PDB file. Should probably be the output of `./protonate_and_add_conect_records.py`')
 
-    parser.add_argument('--output_hetdict', '-o', default='modifed_hetdict.txt', type=str, help='Path to output hetdict file. Defaults to modified_hetdict.txt')
+    parser.add_argument('--output_hetdict', '-o', default='modified_hetdict.txt', type=str, help='Path to output hetdict file. Defaults to modified_hetdict.txt')
     parser.add_argument('--input_hetdict', '-i', type=str, default='reduce_wwPDB_het_dict_two_letter_bug_fixed.txt', help='Path to input hetdict file. Defaults to reduce_wwPDB_het_dict_two_letter_bug_fixed.txt')
     parser.add_argument('--name', '-n', type=str, default='NISELIGAND', help='Name of the ligand for reduce (default: NISELIGAND), doesn\'t really matter but can be grepped for in the output hetdict.')
     args = parser.parse_args()
