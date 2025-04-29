@@ -26,6 +26,7 @@ sys.path.append('/nfs/polizzi/bfry/programs/utility_scripts')
 import wandb
 import torch
 import numpy as np
+import plotly
 import plotly.express as px
 from run_inference import load_model_from_parameter_dict # type: ignore
 from run_batch_inference import _run_inference, output_protein_structure, output_ligand_structure # type: ignore
@@ -297,7 +298,8 @@ class DesignCampaign:
 
         print(logs)
         if use_wandb:
-            logs['ligand_RMSD_vs_pLDDT_scatter'] = wandb.Plotly(px.scatter(dataframe, x='ligand_rmsds', y='ligand_plddts', color='protein_rmsds', hover_data=['protein_rmsds', 'sequences'], range_color=[0.0, 2.5], range_y=[0.0, 1.0], range_x=[0.0, 5.0])) # type: ignore
+            scatter_fig = px.scatter(dataframe, x='ligand_rmsds', y='ligand_plddts', color='protein_rmsds', hover_data=['protein_rmsds', 'sequences'], range_color=[0.0, 2.5], range_y=[0.0, 1.0], range_x=[0.0, 5.0])
+            logs['ligand_RMSD_vs_pLDDT_scatter'] = wandb.Html(plotly.io.to_html(scatter_fig)) # type: ignore
             wandb.log(logs)
     
 
@@ -431,7 +433,7 @@ if __name__ == "__main__":
         self_consistency_ligand_rmsd_threshold = 1.5,
         self_consistency_protein_rmsd_threshold = 1.5,
 
-        use_reduce_protonation = False, # If false, will use RDKit to protonate.
+        use_reduce_protonation = False, # If False, will use RDKit to protonate, these hydrogens will not preserve the input names.
         reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
         reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'), # Can set to None if use_reduce_protonation False
 
