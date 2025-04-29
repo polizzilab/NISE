@@ -50,6 +50,7 @@ To test out an example run:
 
 ```bash
 
+# Protonated smiles string from ChemDraw.
 ./protonate_and_add_conect_records.py ./example_pdbs/16_pose26_en_-5p044_no_CG_top1_of_1_n4_00374_looped_master_6_gly_0001_trim_H_98.pdb "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O" ./example_pdbs/test_input_protonated_conect.pdb
 
 ./inject_ligand_into_hetdict.py ./example_pdbs/test_input_protonated_conect.pdb
