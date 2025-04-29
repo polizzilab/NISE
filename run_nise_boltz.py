@@ -418,8 +418,7 @@ if __name__ == "__main__":
         debug = (debug := False),
         use_wandb = (use_wandb := (True and not debug)),
 
-        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
-        input_dir = Path('./test_directory/').resolve(),
+        input_dir = Path('./debug/').resolve(),
 
         ligand_3lc = 'EXA', # Should match CCD if using reduce.
         ligand_rmsd_mask_atoms = {'C20', 'C21'},
@@ -433,8 +432,10 @@ if __name__ == "__main__":
         self_consistency_protein_rmsd_threshold = 1.5,
 
         use_reduce_protonation = False, # If false, will use RDKit to protonate.
-        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(),
-        reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'),
+        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
+        reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'), # Can set to None if use_reduce_protonation False
+
+        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
 
         num_iterations = 100,
         num_top_backbones_per_round = 3,
