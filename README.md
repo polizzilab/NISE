@@ -6,7 +6,7 @@ Jointly optimize the sequence and structure of a protein-ligand binding pose wit
 
 To run NISE, install the conda environment for LASErMPNN and and one which contains Boltz-1x:
 
-1) Install LASErMPNN conda environment
+1) Install [LASErMPNN](https://github.com/polizzilab/LASErMPNN) conda environment
 
 2) Install ProDy from source into lasermpnn conda environment. 
 There is currently an issue with the conda installable ProDy and distance-based selections which are used within NISE. 
