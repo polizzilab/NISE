@@ -413,7 +413,8 @@ if __name__ == "__main__":
     laser_sampling_params = {
         'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
-        'disable_pbar': True,
+        'disable_pbar': True, 
+        'disabled_residues_list': ['X', 'C'] # Disables cysteine sampling by default.
     }
 
     params = dict(
