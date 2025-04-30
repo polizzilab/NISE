@@ -16,8 +16,8 @@ def main(input_pdb_path, output_pdb_path, smiles_string):
     prot = pr.parsePDB(input_pdb_path)
 
     # Extract protein and ligand information into separate objects.
-    prot_only = prot.select('not hetero').copy()
-    lig = prot.select('hetero and not element H').copy()
+    prot_only = prot.select('protein').copy()
+    lig = prot.select('(not protein) and not element H').copy()
 
     setnames = set(lig.getResnames())
     if len(setnames) != 1:
@@ -59,9 +59,11 @@ def main(input_pdb_path, output_pdb_path, smiles_string):
     modlig.setNames(new_atomnames)
 
     # Update conect records to be offset by the appropriate atom index once merged with protein atoms.
-    prot_len = len(prot_only) + 1
+    prot_len = len(prot_only)
     final_stream = io.StringIO()
     pr.writePDBStream(final_stream, prot_only + modlig)
+    if 'TER ' in final_stream.getvalue():
+        prot_len += 1
     offset_conect = []
     for conect in rdkit_conect:
         conect_str, *conect_rcrd = conect.split()

@@ -75,7 +75,7 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     input_protein = pr.parsePDB(str(backbone_path))
     assert isinstance(input_protein, pr.AtomGroup), f"Error loading backbone {backbone_path}"
 
-    ligand = input_protein.select('hetero').copy()
+    ligand = input_protein.select('not protein').copy()
     assert ligand.numResidues() == 1, f"Error selecting ligand from backbone {backbone_path}"
 
     # Create a pdb string for the ligand.
@@ -103,7 +103,7 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     B = pr.parsePDB('test.pdb')
     B.setChids(['B' for _ in range(len(ligand.getResnames()))])
     B.setResnums([1 for _ in range(len(ligand.getResnames()))])
-    A = input_protein.select('not hetero').copy() + B
+    A = input_protein.select('protein').copy() + B
     # pr.writePDB('test2.pdb', A)
 
     ligname = lignames_set.pop()
@@ -168,7 +168,7 @@ class DesignCampaign:
         construct_helper_files(self.sdf_path, self.params_path, self.backbone_queue[0][0], ligand_smiles)
 
         input_prot = pr.parsePDB(str(self.backbone_queue[0][0]))
-        input_prot_lig_heavy = input_prot.select('hetero and not element H')
+        input_prot_lig_heavy = input_prot.select('(not protein) and not element H')
 
         self.ligand_rmsd_mask_atoms = ligand_rmsd_mask_atoms
 
@@ -234,7 +234,7 @@ class DesignCampaign:
 
             # Remap the boltz structure ligand atoms with the name mapping.
             boltz_prot_only = boltz_prot.select('protein')
-            boltz_lig_only = boltz_prot.select('hetero and not element H')
+            boltz_lig_only = boltz_prot.select('(not protein) and not element H')
             boltz_lig_only.setNames([boltz_to_laser_name_mapping[x] for x in boltz_lig_only.getNames()])
             boltz_lig_only.setResnames([self.ligand_3lc for _ in range(len(boltz_lig_only.getResnames()))])
             boltz_coords = boltz_lig_only.getCoords()
@@ -322,7 +322,7 @@ def compute_laser_scores(protein_sequences_list: Sequence[pr.AtomGroup]) -> Tupl
 
     for protein in protein_sequences_list:
         laser_score = (-1 * np.log10(protein.ca.getBetas())).mean()
-        laser_score_bs = (-1 * np.log10(protein.select('(same residue as ((protein and not element H) within 5.0 of (hetero and not element H))) and name CA').getBetas())).mean()
+        laser_score_bs = (-1 * np.log10(protein.select('(same residue as ((protein and not element H) within 5.0 of ((not protein) and not element H))) and name CA').getBetas())).mean()
 
         full_sequence_scores.append(laser_score)
         binding_site_scores.append(laser_score_bs)
@@ -411,7 +411,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 if __name__ == "__main__":
 
     laser_sampling_params = {
-        'sequence_temp': 0.2, 'first_shell_sequence_temp': 1.0, 
+        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
         'disable_pbar': True,
     }
@@ -429,8 +429,8 @@ if __name__ == "__main__":
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
         keep_input_backbone_in_queue = False,
-        rmsd_use_chirality = True,
-        self_consistency_ligand_rmsd_threshold = 1.5,
+        rmsd_use_chirality = False,
+        self_consistency_ligand_rmsd_threshold = 2.5,
         self_consistency_protein_rmsd_threshold = 1.5,
 
         use_reduce_protonation = False, # If False, will use RDKit to protonate, these hydrogens will not preserve the input names.

@@ -43,7 +43,7 @@ def _main(
 
     protein_rmsd = None
     if align_on_binding_site:
-        ag1_binding_site = ag1.select('same residue as (protein and not element H and not (name CA or name C or name O or name N) within 5.0 of (hetero and not element H)) and name CA')
+        ag1_binding_site = ag1.select('same residue as (protein and not element H and not (name CA or name C or name O or name N) within 5.0 of ((not protein) and not element H)) and name CA')
         if ag1_binding_site is not None:
             ag1_binding_site_str = '(resindex ' + ' '.join(map(str, ag1_binding_site.getResindices())) + ') and name CA'
             ag2_binding_site = ag2.select(ag1_binding_site_str)
@@ -58,8 +58,8 @@ def _main(
         ag2 = pr.calcTransformation(ag2.ca, ag1.ca).apply(ag2)
         protein_rmsd = pr.calcRMSD(ag1.ca, ag2.ca)
 
-    lig1 = ag1.select('hetero and not element H')
-    lig2 = ag2.select('hetero and not element H')
+    lig1 = ag1.select('(not protein) and not element H')
+    lig2 = ag2.select('(not protein) and not element H')
 
     if len(set(lig1.getResnames()).pop()) > 3:
         lig1.setResnames(default_lig_name)
