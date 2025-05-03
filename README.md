@@ -40,7 +40,7 @@ WARNING: This will rename the ligand atoms, ligand chain, and resnum.
 3) Create an input directory with a subfolder called input_backbones. Ex: `./debug/input_backbones/`.
 
 
-4) Update the params dictionary at the bottom of `./run_nise_boltz.py` with the path to your new input dir ex: (`input_dir = Path('./debug/'`).
+4) Update the params dictionary at the bottom of `./run_nise_boltz.py` with the path to your new input dir ex: (`input_dir = Path('./debug/')`).
 
 
 5) Update burial and RMSD atom sets and smiles string in `./run_nise_boltz.py`
