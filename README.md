@@ -21,6 +21,7 @@ cd ProDy
 python setup.py build_ext --inplace --force
 pip install -Ue .
 
+cd ..
 tar -xvf hetdict.tar.gz
 ```
 
