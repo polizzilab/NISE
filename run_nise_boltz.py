@@ -413,8 +413,13 @@ if __name__ == "__main__":
     laser_sampling_params = {
         'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
-        'disable_pbar': True, 
-        'disabled_residues_list': ['X', 'C'] # Disables cysteine sampling by default.
+        'disable_pbar': True, 'disabled_residues_list': ['X', 'C'], # Disables cysteine sampling by default.
+
+        # Optional: Pass a prody selection string of the form ('resnum 1 or resnum 3 or resnum 5...') to 
+        # specify residues over which to constrain the sampling of ALA or GLY residues. 
+        # This string can be generated using './identify_surface_residues.ipynb'
+        'budget_residue_sele_string': None, 
+        'ala_budget': 4, 'gly_budget': 0, # May sample up to 4 Ala and 0 Gly over the selected region.
     }
 
     params = dict(
@@ -450,7 +455,7 @@ if __name__ == "__main__":
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
 
-        laser_inference_device = 'cuda:0',
+        laser_inference_device = boltz_inference_devices[0],
         laser_inference_dropout = True,
     )
     if use_wandb:
