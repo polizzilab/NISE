@@ -49,7 +49,7 @@ def _main(
             ag2_binding_site = ag2.select(ag1_binding_site_str)
 
             ag2 = pr.calcTransformation(ag2_binding_site, ag1_binding_site).apply(ag2)
-            protein_rmsd = pr.calcRMSD(ag1.ca, ag2.ca)
+            protein_rmsd = pr.calcRMSD(ag2_binding_site, ag1_binding_site)
         else:
             warnings.warn("No binding site found in the reference structure... Aligning on the CA atoms.")
     

@@ -1,3 +1,4 @@
 [submodule "LASErMPNN"]
 	path = LASErMPNN
 	url = git@github.com:polizzilab/LASErMPNN.git
+    branch = fix_surface_ala
