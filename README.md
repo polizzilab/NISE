@@ -14,6 +14,8 @@ This can be resolved for now by installing ProDy from source.
 
 Just follow this set of commands inside the NISE project directory after `git clone`-ing the project and installing the lasermpnn environment.
 ```bash
+git submodule update --init --recursive
+
 conda activate lasermpnn
 
 git clone git@github.com:prody/ProDy.git
