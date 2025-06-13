@@ -7,7 +7,6 @@ import prody as pr
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit_to_params import Params
-import asyncio
 import pandas as pd
 from collections import defaultdict
 import shutil
@@ -19,9 +18,6 @@ from typing import *
 
 CURR_DIR_PATH = str(Path(os.path.abspath(__file__)).parent)
 LASER_PATH = str(Path(CURR_DIR_PATH) / 'LASErMPNN')
-
-# sys.path.append(LASER_PATH)
-# sys.path.append('/nfs/polizzi/bfry/programs/utility_scripts')
 
 import wandb
 import torch
@@ -117,12 +113,12 @@ class DesignCampaign:
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, worker_init_port, 
-        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, **kwargs
+        boltz2x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
         self.boltz_inference_devices = boltz_inference_devices
-        self.boltz1x_executable_path = boltz1x_executable_path
+        self.boltz2x_executable_path = boltz2x_executable_path
         self.use_reduce_protonation = use_reduce_protonation
 
         self.rmsd_use_chirality = rmsd_use_chirality
@@ -250,7 +246,12 @@ class DesignCampaign:
                 if (ligand_rmsd < self.self_consistency_ligand_rmsd_threshold and protein_rmsd < self.self_consistency_protein_rmsd_threshold) or self.debug:
 
                     if self.use_reduce_protonation:
-                        subprocess.run(f'{reduce_executable_path} -DB {reduce_hetdict_path} -DROP_HYDROGENS_ON_ATOM_RECORDS -BUILD {pdb_output_path} > {pdb_output_path}_', shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.run(
+                            f'{reduce_executable_path} -DB {reduce_hetdict_path} -DROP_HYDROGENS_ON_ATOM_RECORDS -BUILD {pdb_output_path} > {pdb_output_path}_', 
+                            shell=True, check=False, 
+                            stdout=subprocess.DEVNULL if not self.debug else subprocess.PIPE, 
+                            stderr=subprocess.DEVNULL if not self.debug else subprocess.PIPE
+                        )
                         shutil.move(f'{pdb_output_path}_', pdb_output_path)
                     else:
                         ligand_string = io.StringIO()
@@ -303,17 +304,18 @@ class DesignCampaign:
             wandb.log(logs)
     
 
-async def run_command(command: str, cuda_devices: Sequence[str]):
-    command = f'CUDA_VISIBLE_DEVICES={",".join(cuda_devices)} {command}'
-
-    proc = await asyncio.create_subprocess_shell(command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-    await proc.communicate()
-
-
-async def predict_complex_structures(boltz_inputs_dir, boltz1x_executable_path, boltz_inference_devices, boltz_output_dir):
+def predict_complex_structures(boltz_inputs_dir, boltz2x_executable_path, boltz_inference_devices, boltz_output_dir, debug):
     device_ints = [x.split(':')[-1] for x in boltz_inference_devices]
-    command = f'{boltz1x_executable_path} predict {boltz_inputs_dir} --devices {len(device_ints)} --out_dir {boltz_output_dir} --output_format pdb --override'
-    await run_command(command, device_ints)
+    command = f'{boltz2x_executable_path} predict {boltz_inputs_dir} --devices {len(device_ints)} --out_dir {boltz_output_dir} --output_format pdb --use_potentials --override'
+    command = f'CUDA_VISIBLE_DEVICES={",".join(device_ints)} {command}'
+
+    try:
+        # Boltz sometimes completes with a nonzero exit code despite completing successfully. 
+        # If not all expected files were generated NISE will crash at the log step.
+        subprocess.run(command, shell=True, check=False, stdout=subprocess.DEVNULL if not debug else None, stderr=subprocess.DEVNULL if not debug else None)
+    except:
+        print('Boltz crashed! This might be fine, trying to recover...')
+        pass
 
 
 def compute_laser_scores(protein_sequences_list: Sequence[pr.AtomGroup]) -> Tuple[List[float], List[float]]:
@@ -378,7 +380,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
             pr.writePDB(str(laser_output_path), laser_output_structure)
             all_laser_output_paths.append(laser_output_path)
 
-        asyncio.run(predict_complex_structures(boltz_input_dir, design_campaign.boltz1x_executable_path, design_campaign.boltz_inference_devices, sampling_subdir))
+        predict_complex_structures(boltz_input_dir, design_campaign.boltz2x_executable_path, design_campaign.boltz_inference_devices, sampling_subdir, design_campaign.debug)
         assert all([x.exists() for x in all_boltz_model_paths]), f"Error: not all boltz predictions were written to disk."
 
         # Identify any new backbone candidates.
@@ -414,10 +416,11 @@ if __name__ == "__main__":
         'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
         'disable_pbar': True, 'disabled_residues_list': ['X', 'C'], # Disables cysteine sampling by default.
-
+        # ==================================================================================================== 
         # Optional: Pass a prody selection string of the form ('resnum 1 or resnum 3 or resnum 5...') to 
         # specify residues over which to constrain the sampling of ALA or GLY residues. 
         # This string can be generated using './identify_surface_residues.ipynb'
+        # ==================================================================================================== 
         'budget_residue_sele_string': None, 
         'ala_budget': 4, 'gly_budget': 0, # May sample up to 4 Ala and 0 Gly over the selected region.
     }
@@ -450,7 +453,7 @@ if __name__ == "__main__":
         sequences_sampled_at_once = 30,
 
         worker_init_port = 12389,
-        boltz1x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz1x/bin/boltz',
+        boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
