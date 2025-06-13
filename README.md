@@ -1,10 +1,12 @@
-# Neural Iterative Selection Expansion (NISE) using LASErMPNN and Boltz-1x
+# Neural Iterative Selection Expansion (NISE) using LASErMPNN and Boltz-1x/Boltz-2x
+
+### Check out the paper [here](https://www.biorxiv.org/content/10.1101/2025.04.22.649862v1)!
 
 Jointly optimize the sequence and structure of a protein-ligand binding pose with iterative selection-expansion.
 
 ### Installing NISE Environment
 
-To run NISE, install the conda environment for LASErMPNN and and one which contains Boltz-1x:
+To run NISE, install the conda environment for LASErMPNN and and a separate conda environment which contains Boltz-1x or Boltz-2x:
 
 1) Install [LASErMPNN](https://github.com/polizzilab/LASErMPNN) conda environment
 
@@ -27,8 +29,8 @@ cd ..
 tar -xvf hetdict.tar.gz
 ```
 
-3) Activate your conda environment containing Boltz-1x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
-You will need to update this path in `run_nise_boltz.py`
+3) Activate your conda environment containing Boltz-1x or Boltz-2x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
+You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.py` respectively.
 
 ### Running NISE:
 
@@ -43,12 +45,13 @@ WARNING: This will rename the ligand atoms, ligand chain, and resnum.
 3) Create an input directory with a subfolder called input_backbones. Ex: `./debug/input_backbones/`.
 
 
-4) Update the params dictionary at the bottom of `./run_nise_boltz.py` with the path to your new input dir ex: (`input_dir = Path('./debug/')`).
+4) Update the params dictionary at the bottom of `./run_nise_boltz1x.py` with the path to your new input dir ex: (`input_dir = Path('./debug/')`).
 
+6) Update burial and RMSD atom sets and smiles string in `./run_nise_boltz1x.py`
 
-5) Update burial and RMSD atom sets and smiles string in `./run_nise_boltz.py`
+7) Update `boltz1x_executable_path` at bottom of `./run_nise_boltz1x.py`
 
-6) Update `boltz1x_executable_path` at bottom of `./run_nise_boltz.py`
+8) If you want to constrain the number of alanine and glycine residues predicted on the surface of the protein in secondary-structured regions, run `identify_surface_residues.ipynb` and update 'budget_residue_sele_string' in the params dictionary at the bottom of the run_nise_boltz script.
 
 To test out an example run:
 
@@ -61,5 +64,5 @@ mkdir -p ./debug/input_backbones/
 
 cp ./example_pdbs/test_input_protonated_conect.pdb ./debug/input_backbones/
 
-./run_nise_boltz.py
+./run_nise_boltz1x.py
 ```
