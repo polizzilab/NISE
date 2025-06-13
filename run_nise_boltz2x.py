@@ -23,9 +23,9 @@ from rdkit import Chem
 import plotly.express as px
 from rdkit.Chem import AllChem
 from rdkit_to_params import Params
+
 from LASErMPNN.run_inference import load_model_from_parameter_dict # type: ignore
 from LASErMPNN.run_batch_inference import _run_inference, output_protein_structure, output_ligand_structure # type: ignore
-
 from utility_scripts.burial_calc import compute_fast_ligand_burial_mask
 from utility_scripts.calc_symmetry_aware_rmsd import _main as calc_rmsd
 
@@ -131,8 +131,8 @@ class DesignCampaign:
         model_checkpoint, input_dir, ligand_rmsd_mask_atoms, ligand_burial_mask_atoms, laser_inference_device, debug, ligand_3lc,
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
-        sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, worker_init_port, 
-        boltz2x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, use_boltz_conformer_potentials,
+        sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
+        use_reduce_protonation, keep_input_backbone_in_queue, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, **kwargs
     ):
         self.debug = debug
@@ -370,6 +370,8 @@ def predict_complex_structures(boltz_inputs_dir, boltz2x_executable_path, boltz_
     if use_boltz_1x:
         command += f' --model boltz1'
 
+    print(command)
+
     try:
         # Boltz sometimes completes with a nonzero exit code despite completing successfully. 
         # If not all expected files were generated NISE will crash at the log step.
@@ -514,12 +516,11 @@ if __name__ == "__main__":
         num_top_backbones_per_round = 3,
         sequences_sampled_at_once = 30,
 
-        worker_init_port = 12389,
         boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
-        use_boltz_conformer_potentials = True,
+        use_boltz_conformer_potentials = True, # Use Boltz-<v#>x mode
         boltz2_predict_affinity = False,
-        use_boltz_1x = False, # Run the same script using boltz1x
+        use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
 
