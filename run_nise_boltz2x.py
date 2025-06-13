@@ -230,9 +230,9 @@ class DesignCampaign:
             boltz_string_io = io.StringIO(boltz_string_str)
             boltz_prot = pr.parsePDBStream(boltz_string_io)
 
-            confidence_data = {}
+            confidence_data = {'laser_output_pdb_path': laser, 'boltz_output_pdb_path': boltz}
             with (boltz.parent / f'confidence_{boltz.stem}.json').open('r') as f:
-                confidence_data = json.load(f)
+                confidence_data.update(json.load(f))
 
             design_iptm = confidence_data['iptm']
             design_bind_probability, design_predicted_affinity = torch.nan, torch.nan
