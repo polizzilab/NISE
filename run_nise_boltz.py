@@ -20,16 +20,16 @@ from typing import *
 CURR_DIR_PATH = str(Path(os.path.abspath(__file__)).parent)
 LASER_PATH = str(Path(CURR_DIR_PATH) / 'LASErMPNN')
 
-sys.path.append(LASER_PATH)
-sys.path.append('/nfs/polizzi/bfry/programs/utility_scripts')
+# sys.path.append(LASER_PATH)
+# sys.path.append('/nfs/polizzi/bfry/programs/utility_scripts')
 
 import wandb
 import torch
 import numpy as np
 import plotly
 import plotly.express as px
-from run_inference import load_model_from_parameter_dict # type: ignore
-from run_batch_inference import _run_inference, output_protein_structure, output_ligand_structure # type: ignore
+from LASErMPNN.run_inference import load_model_from_parameter_dict # type: ignore
+from LASErMPNN.run_batch_inference import _run_inference, output_protein_structure, output_ligand_structure # type: ignore
 
 from utility_scripts.burial_calc import compute_fast_ligand_burial_mask
 from utility_scripts.calc_symmetry_aware_rmsd import _main as calc_rmsd
@@ -423,14 +423,14 @@ if __name__ == "__main__":
     }
 
     params = dict(
-        debug = (debug := False),
+        debug = (debug := True),
         use_wandb = (use_wandb := (True and not debug)),
 
         input_dir = Path('./debug/').resolve(),
 
         ligand_3lc = 'EXA', # Should match CCD if using reduce.
-        ligand_rmsd_mask_atoms = {'C20', 'C21'},
-        ligand_burial_mask_atoms = {'N2', 'C5', 'C6', 'C7', 'O1', 'C2', 'C4', 'C8', 'C15', 'C14', 'C9', 'C3'},
+        ligand_rmsd_mask_atoms = {'C20', 'C21'}, # Atoms to IGNORE in RMSD calculation. 
+        ligand_burial_mask_atoms = {'N2', 'C5', 'C6', 'C7', 'O1', 'C2', 'C4', 'C8', 'C15', 'C14', 'C9', 'C3'}, # Atoms to IGNORE in burial calculation.
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
