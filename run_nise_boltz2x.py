@@ -43,9 +43,8 @@ def compute_objective_function(confidence_metrics_dict: dict) -> float:
     """
 
     # Untested but maybe better?:
-    # return confidence_metrics_dict['iptm'] + confidence_metrics_dict['affinity_probability_binary']
-
-    return confidence_metrics_dict['design_ligand_plddt']
+    return confidence_metrics_dict['iptm'] + confidence_metrics_dict['affinity_probability_binary']
+    # return confidence_metrics_dict['design_ligand_plddt']
 
 
 def get_boltz_yaml_boilerplate(sequence: str, smiles: str, predict_affinity: bool):
@@ -489,7 +488,7 @@ if __name__ == "__main__":
     }
 
     params = dict(
-        debug = (debug := True),
+        debug = (debug := False),
         use_wandb = (use_wandb := (True and not debug)),
 
         input_dir = Path('./debug/').resolve(),
@@ -519,7 +518,7 @@ if __name__ == "__main__":
         boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
         use_boltz_conformer_potentials = True, # Use Boltz-<v#>x mode
-        boltz2_predict_affinity = False,
+        boltz2_predict_affinity = True,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),

@@ -21,7 +21,12 @@ def get_formula(elements: Sequence) -> str:
 
 def write_hetdict_str(hetatm_lines, conect_megadict, three_letter_code, formula, name='NISELIGAND'):
     output_string = ''
-    output_string += f'RESIDUE   {three_letter_code}     {len(hetatm_lines)}\n'
+    output_string += f'RESIDUE   {three_letter_code}     {len(hetatm_lines)+1}\n'
+
+    for i,j in conect_megadict:
+        if i == 'C':
+            j.append('OXT')
+    conect_megadict.append(('OXT', ['C']))
 
     # Loop over each atom and write the reduce-formatted bond information.
     for (atom, connected) in conect_megadict:
@@ -37,7 +42,7 @@ def write_hetdict_str(hetatm_lines, conect_megadict, three_letter_code, formula,
         output_string += f'CONECT    {atom.rjust(5)}    {len(connected)}{connected_atoms_justified}\n'
 
     output_string += 'END\n'
-    output_string += f'HET    {three_letter_code}             {len(hetatm_lines)}\n'
+    output_string += f'HET    {three_letter_code}             {len(hetatm_lines)+1}\n'
     output_string += f'HETSYN     {three_letter_code} {name}\n'
     output_string += f'HETNAM     {three_letter_code} {name}\n'
     output_string += f'FORMUL      {three_letter_code}    {formula}\n'
