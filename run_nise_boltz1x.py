@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import time
 import subprocess
 from pathlib import Path
 import prody as pr
@@ -379,7 +380,16 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
             pr.writePDB(str(laser_output_path), laser_output_structure)
             all_laser_output_paths.append(laser_output_path)
 
-        predict_complex_structures(boltz_input_dir, design_campaign.boltz1x_executable_path, design_campaign.boltz_inference_devices, sampling_subdir, design_campaign.debug)
+        curr_tries = 0
+        max_tries = 10
+        while curr_tries < max_tries and not all([x.exists() for x in all_boltz_model_paths]):
+            if curr_tries != 0:
+                print('Not all boltz predictions were completed or file system not updated.. retrying...')
+                time.sleep(30)
+            
+            predict_complex_structures(boltz_input_dir, design_campaign.boltz1x_executable_path, design_campaign.boltz_inference_devices, sampling_subdir, design_campaign.debug)
+            curr_tries += 1
+
         assert all([x.exists() for x in all_boltz_model_paths]), f"Error: not all boltz predictions were written to disk."
 
         # Identify any new backbone candidates.
