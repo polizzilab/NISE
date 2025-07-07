@@ -32,6 +32,12 @@ tar -xvf hetdict.tar.gz
 3) Activate your conda environment containing Boltz-1x or Boltz-2x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
 You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.py` respectively.
 
+
+### Generating input poses:
+
+While we would recommend following the protocol using COMBS to generate initial poses as outlined in our paper, decent starting poses may be generated using the workflow outlined [here using CARPdock,](https://github.com/benf549/CARPdock) though this has not yet been experimentally validated.
+
+
 ### Running NISE:
 
 1) Create a PDB file containing your PROTONATED input ligand with CONECT records encoding bonds:
