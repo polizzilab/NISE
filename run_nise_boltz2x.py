@@ -133,7 +133,8 @@ class DesignCampaign:
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
         use_reduce_protonation, keep_input_backbone_in_queue, use_boltz_conformer_potentials,
-        boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, **kwargs
+        boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
+        boltz2_disable_kernels, boltz2_disable_nccl_p2p, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -143,6 +144,8 @@ class DesignCampaign:
         self.boltz2x_executable_path = boltz2x_executable_path
         self.predict_affinity = boltz2_predict_affinity
         self.use_reduce_protonation = use_reduce_protonation
+        self.boltz2_disable_kernels = boltz2_disable_kernels
+        self.boltz2_disable_nccl_p2p = boltz2_disable_nccl_p2p 
 
         assert not (self.use_boltz_1x and self.predict_affinity), 'Cannot use both boltz1 and affinity prediction.'
 
@@ -359,16 +362,25 @@ class DesignCampaign:
             wandb.log(logs)
     
 
-def predict_complex_structures(boltz_inputs_dir, boltz2x_executable_path, boltz_inference_devices, boltz_output_dir, use_potentials, use_boltz_1x, debug):
+def predict_complex_structures(
+    boltz_inputs_dir, boltz2x_executable_path, boltz_inference_devices, 
+    boltz_output_dir, use_potentials, use_boltz_1x, disable_kernels, disable_nccl_p2p, debug
+):
     device_ints = [x.split(':')[-1] for x in boltz_inference_devices]
     command = f'{boltz2x_executable_path} predict {boltz_inputs_dir} --devices {len(device_ints)} --out_dir {boltz_output_dir} --output_format pdb --override'
     command = f'CUDA_VISIBLE_DEVICES={",".join(device_ints)} {command}'
+
+    if disable_nccl_p2p:
+        command = f'NCCL_P2P_DISABLE=1 {command}'
 
     if use_potentials:
         command += f' --use_potentials'
 
     if use_boltz_1x:
         command += f' --model boltz1'
+
+    if disable_kernels:
+        command += f' --no_kernels'
 
     print(command)
 
@@ -453,7 +465,8 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
             
             predict_complex_structures(
                 boltz_input_dir, design_campaign.boltz2x_executable_path, design_campaign.boltz_inference_devices, 
-                sampling_subdir, design_campaign.use_boltz_conformer_potentials, design_campaign.use_boltz_1x, design_campaign.debug
+                sampling_subdir, design_campaign.use_boltz_conformer_potentials, design_campaign.use_boltz_1x, 
+                design_campaign.boltz2_disable_kernels, design_campaign.boltz2_disable_nccl_p2p, design_campaign.debug
             )
             curr_tries += 1
 
@@ -531,6 +544,8 @@ if __name__ == "__main__":
         use_boltz_conformer_potentials = True, # Use Boltz-<v#>x mode
         boltz2_predict_affinity = False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
+        boltz2_disable_kernels = True, # See https://github.com/jwohlwend/boltz/issues/391
+        boltz2_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
 

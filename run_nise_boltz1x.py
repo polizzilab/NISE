@@ -114,7 +114,7 @@ class DesignCampaign:
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, worker_init_port, 
-        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, **kwargs
+        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, boltz1x_disable_nccl_p2p, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -126,6 +126,7 @@ class DesignCampaign:
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
         self.self_consistency_protein_rmsd_threshold = self_consistency_protein_rmsd_threshold
         self.keep_input_backbone_in_queue = keep_input_backbone_in_queue 
+        self.boltz1x_disable_nccl_p2p = boltz1x_disable_nccl_p2p 
 
         self.num_iterations = num_iterations
         self.sequences_sampled_per_backbone = sequences_sampled_per_backbone
@@ -305,10 +306,13 @@ class DesignCampaign:
             wandb.log(logs)
     
 
-def predict_complex_structures(boltz_inputs_dir, boltz1x_executable_path, boltz_inference_devices, boltz_output_dir, debug):
+def predict_complex_structures(boltz_inputs_dir, boltz1x_executable_path, boltz_inference_devices, boltz_output_dir, disable_nccl_p2p, debug):
     device_ints = [x.split(':')[-1] for x in boltz_inference_devices]
     command = f'{boltz1x_executable_path} predict {boltz_inputs_dir} --devices {len(device_ints)} --out_dir {boltz_output_dir} --output_format pdb --override'
     command = f'CUDA_VISIBLE_DEVICES={",".join(device_ints)} {command}'
+
+    if disable_nccl_p2p:
+        command = f'NCCL_P2P_DISABLE=1 {command}'
 
     try:
         # Boltz sometimes completes with a nonzero exit code despite completing successfully. 
@@ -387,7 +391,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
                 print('Not all boltz predictions were completed or file system not updated.. retrying...')
                 time.sleep(30)
             
-            predict_complex_structures(boltz_input_dir, design_campaign.boltz1x_executable_path, design_campaign.boltz_inference_devices, sampling_subdir, design_campaign.debug)
+            predict_complex_structures(boltz_input_dir, design_campaign.boltz1x_executable_path, design_campaign.boltz_inference_devices, sampling_subdir, design_campaign.boltz1x_disable_nccl_p2p, design_campaign.debug)
             curr_tries += 1
 
         assert all([x.exists() for x in all_boltz_model_paths]), f"Error: not all boltz predictions were written to disk."
@@ -464,6 +468,7 @@ if __name__ == "__main__":
         worker_init_port = 12389,
         boltz1x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz1x/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
+        boltz1x_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
 
