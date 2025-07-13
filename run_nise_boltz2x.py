@@ -208,7 +208,8 @@ class DesignCampaign:
             remaining_samples = self.sequences_sampled_per_backbone - num_sampled
             num_seq_to_sample = min(remaining_samples, self.sequences_sampled_at_once)
 
-            sampling_output, full_atom_coords, nh_coords, sampled_probs, batch_data, protein_complex_data = _run_inference(self.model, self.model_params, str(backbone_path), num_seq_to_sample, **self.laser_sampling_params)
+            sampling_output, full_atom_coords, nh_coords, sampled_probs, batch_data, protein_complex_data = _run_inference(self.model, self.model_params, Path(backbone_path), num_seq_to_sample, **self.laser_sampling_params)
+            protein_complex_data = protein_complex_data[0]
             for idx in range(num_seq_to_sample):
                 curr_batch_mask = batch_data.batch_indices == idx
                 out_prot = output_protein_structure(full_atom_coords[curr_batch_mask], sampling_output.sampled_sequence_indices[curr_batch_mask], protein_complex_data.residue_identifiers, nh_coords[curr_batch_mask], sampled_probs[curr_batch_mask])
@@ -509,6 +510,7 @@ if __name__ == "__main__":
         # ==================================================================================================== 
         'budget_residue_sele_string': None, 
         'ala_budget': 4, 'gly_budget': 0, # May sample up to 4 Ala and 0 Gly over the selected region.
+        'disable_charged_fs': True,
     }
 
     params = dict(
