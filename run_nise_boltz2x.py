@@ -31,7 +31,7 @@ from utility_scripts.burial_calc import compute_fast_ligand_burial_mask
 from utility_scripts.calc_symmetry_aware_rmsd import _main as calc_rmsd
 
 
-def compute_objective_function(confidence_metrics_dict: dict) -> float:
+def compute_objective_function(confidence_metrics_dict: dict, objective_function: str) -> float:
     """
     Compute the objective function which will be MAXIMIZED by NISE.
 
@@ -43,9 +43,14 @@ def compute_objective_function(confidence_metrics_dict: dict) -> float:
     and combinations of metrics could be used here.
     """
 
-    # Untested but maybe better?:
-    # return confidence_metrics_dict['iptm'] + confidence_metrics_dict['affinity_probability_binary']
-    return confidence_metrics_dict['design_ligand_plddt']
+    # NOTE: add your own objective function in another elif block here!
+
+    if objective_function == 'ligand_plddt':
+        return confidence_metrics_dict['design_ligand_plddt']
+    elif objective_function == 'iptm_and_pbind':
+        return confidence_metrics_dict['iptm'] + confidence_metrics_dict['affinity_probability_binary']
+    else:
+        raise ValueError(f'Objective_function strategy {objective_function} is not implemented.')
 
 
 def get_boltz_yaml_boilerplate(sequence: str, smiles: str, predict_affinity: bool):
@@ -134,7 +139,7 @@ class DesignCampaign:
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
         use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
-        boltz2_disable_kernels, boltz2_disable_nccl_p2p, **kwargs
+        boltz2_disable_kernels, boltz2_disable_nccl_p2p, objective_function, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -146,8 +151,13 @@ class DesignCampaign:
         self.use_reduce_protonation = use_reduce_protonation
         self.boltz2_disable_kernels = boltz2_disable_kernels
         self.boltz2_disable_nccl_p2p = boltz2_disable_nccl_p2p 
+        self.objective_function = objective_function
 
-        assert not (self.use_boltz_1x and self.predict_affinity), 'Cannot use both boltz1 and affinity prediction.'
+        if not (self.use_boltz_1x and self.predict_affinity):
+            raise ValueError('Cannot use boltz1x with affinity prediction.')
+
+        if self.objective_function == 'iptm_and_pbind' and not self.predict_affinity:
+            raise ValueError("predict_affinity must be True to use objective function iptm_and_pbind")
 
         self.rmsd_use_chirality = rmsd_use_chirality
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
@@ -323,7 +333,7 @@ class DesignCampaign:
                         ligand_prody.setChids('B')
                         pr.writePDB(pdb_output_path, boltz_prot_only.copy() + ligand_prody)
 
-                    score = compute_objective_function(confidence_data)
+                    score = compute_objective_function(confidence_data, self.objective_function)
                     self.backbone_to_best_generation[bb_path] = max(score, self.backbone_to_best_generation[bb_path])
                     self.backbone_queue.append((pdb_output_path, score))
             else:
@@ -537,6 +547,7 @@ if __name__ == "__main__":
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
+        objective_function = 'ligand_plddt', # Current options: {ligand_plddt, iptm_and_pbind}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
         keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
