@@ -1,6 +1,9 @@
 # Neural Iterative Selection Expansion (NISE) using LASErMPNN and Boltz-1x/Boltz-2x
 
-### Check out the paper [here](https://www.biorxiv.org/content/10.1101/2025.04.22.649862v1)!
+![A NISE Trajectory demonstraing optimization of P(bind) and predicted affinity from Boltz-2](./images/boltz2_animation.gif)
+
+### Introduced in the paper [Zero-shot design of drug-binding proteins via neural selection-expansion](https://www.biorxiv.org/content/10.1101/2025.04.22.649862v1)!
+
 
 Jointly optimize the sequence and structure of a protein-ligand binding pose with iterative selection-expansion.
 
