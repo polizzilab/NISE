@@ -153,10 +153,10 @@ class DesignCampaign:
         self.boltz2_disable_nccl_p2p = boltz2_disable_nccl_p2p 
         self.objective_function = objective_function
 
-        if not (self.use_boltz_1x and self.predict_affinity):
+        if self.use_boltz_1x and self.predict_affinity:
             raise ValueError('Cannot use boltz1x with affinity prediction.')
 
-        if self.objective_function == 'iptm_and_pbind' and not self.predict_affinity:
+        if self.objective_function == 'iptm_and_pbind' and (not self.predict_affinity):
             raise ValueError("predict_affinity must be True to use objective function iptm_and_pbind")
 
         self.rmsd_use_chirality = rmsd_use_chirality
@@ -547,7 +547,7 @@ if __name__ == "__main__":
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
-        objective_function = 'ligand_plddt', # Current options: {ligand_plddt, iptm_and_pbind}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
+        objective_function = (objective_function := 'ligand_plddt'), # Current options: {ligand_plddt, iptm_and_pbind}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
         keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
@@ -568,7 +568,7 @@ if __name__ == "__main__":
         boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
         use_boltz_conformer_potentials = True, # Use Boltz-<v#>x mode
-        boltz2_predict_affinity = False,
+        boltz2_predict_affinity = True if objective_function in ('iptm_and_pbind',) else False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
         boltz2_disable_kernels = False, # Kernels may cause inconsistency on some devices, though this may be resolved as trifast is deprecated, see https://github.com/jwohlwend/boltz/issues/391
         boltz2_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 
