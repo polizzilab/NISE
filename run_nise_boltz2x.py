@@ -567,7 +567,7 @@ if __name__ == "__main__":
 
         boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
-        use_boltz_conformer_potentials = True, # Use Boltz-<v#>x mode
+        use_boltz_conformer_potentials = True, # Use Boltz-x mode, this is almost always better.
         boltz2_predict_affinity = True if objective_function in ('iptm_and_pbind',) else False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
         boltz2_disable_kernels = False, # Kernels may cause inconsistency on some devices, though this may be resolved as trifast is deprecated, see https://github.com/jwohlwend/boltz/issues/391
