@@ -113,8 +113,8 @@ class DesignCampaign:
         model_checkpoint, input_dir, ligand_rmsd_mask_atoms, ligand_burial_mask_atoms, laser_inference_device, debug, ligand_3lc,
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
-        sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, worker_init_port, 
-        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, boltz1x_disable_nccl_p2p, **kwargs
+        sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, 
+        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, boltz1x_disable_nccl_p2p, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -126,6 +126,8 @@ class DesignCampaign:
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
         self.self_consistency_protein_rmsd_threshold = self_consistency_protein_rmsd_threshold
         self.keep_input_backbone_in_queue = keep_input_backbone_in_queue 
+        self.keep_best_generator_backbone = keep_best_generator_backbone
+
         self.boltz1x_disable_nccl_p2p = boltz1x_disable_nccl_p2p 
 
         self.num_iterations = num_iterations
@@ -159,6 +161,8 @@ class DesignCampaign:
             self.backbone_queue = [(x, torch.inf) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
         else:
             self.backbone_queue = [(x, 0) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
+
+        self.backbone_to_best_generation = defaultdict(float)
 
         if len(self.backbone_queue) > 1:
             raise NotImplementedError(f"More than one input backbone not currently supported.")
@@ -273,6 +277,12 @@ class DesignCampaign:
                 ligand_is_buried.append(False)
         
         self.backbone_queue = sorted(self.backbone_queue, key=lambda x: float(x[1]), reverse=True)[:self.top_k]
+
+        if self.keep_best_generator_backbone:
+            top_backbone = max(self.backbone_to_best_generation.items(), key=lambda x: x[1])
+            print(top_backbone)
+            if not (top_backbone[0] in [x[0] for x in self.backbone_queue]):
+                self.backbone_queue = self.backbone_queue[:-1] + [top_backbone]
 
         return sorted_designs_laser, sorted_designs_boltz, ligand_rmsds, protein_rmsds, ligand_plddts, ligand_is_buried
 
@@ -453,6 +463,7 @@ if __name__ == "__main__":
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
         keep_input_backbone_in_queue = False,
+        keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
         rmsd_use_chirality = False,
         self_consistency_ligand_rmsd_threshold = 2.5,
         self_consistency_protein_rmsd_threshold = 1.5,
@@ -467,7 +478,6 @@ if __name__ == "__main__":
         num_top_backbones_per_round = 3,
         sequences_sampled_at_once = 30,
 
-        worker_init_port = 12389,
         boltz1x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz1x/bin/boltz',
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
         boltz1x_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 

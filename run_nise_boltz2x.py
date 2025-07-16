@@ -132,7 +132,7 @@ class DesignCampaign:
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
-        use_reduce_protonation, keep_input_backbone_in_queue, use_boltz_conformer_potentials,
+        use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
         boltz2_disable_kernels, boltz2_disable_nccl_p2p, **kwargs
     ):
@@ -186,6 +186,10 @@ class DesignCampaign:
             self.backbone_queue = [(x, torch.inf) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
         else:
             self.backbone_queue = [(x, 0) for x in self.input_backbones_path.iterdir() if x.is_file() and x.suffix == '.pdb']
+        
+        # Whether to keep the pose that generates the highest confidence sequences.
+        self.keep_best_generator_backbone = keep_best_generator_backbone
+        self.backbone_to_best_generation = defaultdict(float)
 
         if len(self.backbone_queue) > 1:
             raise NotImplementedError(f"More than one input backbone not currently supported.")
@@ -222,13 +226,12 @@ class DesignCampaign:
         
         return sampled_proteins, sampled_sequences
 
-    def identify_backbone_candidates(self, sorted_designs_boltz: Sequence[Path], sorted_designs_laser: Sequence[Path], reduce_executable_path, reduce_hetdict_path):
-
+    def identify_backbone_candidates(self, sorted_designs_boltz: Sequence[Path], sorted_designs_laser: Sequence[Path], sampled_backbone_paths: Sequence[Path], reduce_executable_path, reduce_hetdict_path):
         assert len(sorted_designs_laser) == len(sorted_designs_boltz), f"Error: different number of designs in" # {boltz_output_subdir} and {laser_output_subdir}."
         smi_mol = Chem.MolFromSmiles(self.ligand_smiles)
 
         log_data = defaultdict(list)
-        for laser, boltz in zip(sorted_designs_laser, sorted_designs_boltz):
+        for laser, boltz, bb_path in zip(sorted_designs_laser, sorted_designs_boltz, sampled_backbone_paths):
             laser_prot = pr.parsePDB(str(laser))
             boltz_string_str = open(boltz, 'r').read()
             boltz_string_io = io.StringIO(boltz_string_str)
@@ -320,11 +323,20 @@ class DesignCampaign:
                         ligand_prody.setChids('B')
                         pr.writePDB(pdb_output_path, boltz_prot_only.copy() + ligand_prody)
 
-                    self.backbone_queue.append((pdb_output_path, compute_objective_function(confidence_data)))
+                    score = compute_objective_function(confidence_data)
+                    self.backbone_to_best_generation[bb_path] = max(score, self.backbone_to_best_generation[bb_path])
+                    self.backbone_queue.append((pdb_output_path, score))
             else:
                 log_data['ligand_is_buried'].append(False)
         
         self.backbone_queue = sorted(self.backbone_queue, key=lambda x: float(x[1]), reverse=True)[:self.top_k]
+
+        # Adds the backbone which has generated the best scoring pose if it's not in the queue already.
+        if self.keep_best_generator_backbone:
+            top_backbone = max(self.backbone_to_best_generation.items(), key=lambda x: x[1])
+            print(top_backbone)
+            if not (top_backbone[0] in [x[0] for x in self.backbone_queue]):
+                self.backbone_queue = self.backbone_queue[:-1] + [top_backbone]
 
         return sorted_designs_laser, sorted_designs_boltz, log_data
     
@@ -474,7 +486,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
         assert all([x.exists() for x in all_boltz_model_paths]), f"Error: not all boltz predictions were written to disk."
 
         # Identify any new backbone candidates.
-        sorted_designs_laser, sorted_designs_rosetta, log_data = design_campaign.identify_backbone_candidates(all_boltz_model_paths, all_laser_output_paths, reduce_executable_path, reduce_hetdict_path)
+        sorted_designs_laser, sorted_designs_rosetta, log_data = design_campaign.identify_backbone_candidates(all_boltz_model_paths, all_laser_output_paths, sampled_backbone_path, reduce_executable_path, reduce_hetdict_path)
 
         with open(sampling_subdir / 'backbone_queue.txt', 'w') as f:
             f.write('\n'.join([f"{x[1]}\t{x[0]}" for x in design_campaign.backbone_queue]))
@@ -500,7 +512,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 if __name__ == "__main__":
 
     laser_sampling_params = {
-        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
+        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.7, 
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
         'disable_pbar': True, 'disabled_residues_list': ['X', 'C'], # Disables cysteine sampling by default.
         # ==================================================================================================== 
@@ -509,8 +521,8 @@ if __name__ == "__main__":
         # This string can be generated using './identify_surface_residues.ipynb'
         # ==================================================================================================== 
         'budget_residue_sele_string': None, 
-        'ala_budget': 4, 'gly_budget': 0, # May sample up to 4 Ala and 0 Gly over the selected region.
-        'disable_charged_fs': True,
+        'ala_budget': 4, 'gly_budget': 0, # May sample up to 4 Ala and 0 Gly over the selected region if not None.
+        'disable_charged_fs': True, # Disables sampling D,E,K,R residues for buried residues around the ligand. 
     }
 
     params = dict(
@@ -527,6 +539,7 @@ if __name__ == "__main__":
 
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
+        keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
         rmsd_use_chirality = False, # Will fail to compute RMSD on mismatched chirality ligands, might be bugged...
         self_consistency_ligand_rmsd_threshold = 2.5,
         self_consistency_protein_rmsd_threshold = 1.5,
@@ -546,7 +559,7 @@ if __name__ == "__main__":
         use_boltz_conformer_potentials = True, # Use Boltz-<v#>x mode
         boltz2_predict_affinity = False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
-        boltz2_disable_kernels = True, # See https://github.com/jwohlwend/boltz/issues/391
+        boltz2_disable_kernels = False, # Kernels may cause inconsistency on some devices, though this may be resolved as trifast is deprecated, see https://github.com/jwohlwend/boltz/issues/391
         boltz2_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
