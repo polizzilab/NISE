@@ -129,14 +129,6 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     AllChem.ComputeGasteigerCharges(pdb_mol)
     Chem.MolToMolFile(pdb_mol, str(sdf_path.resolve()))
 
-    Chem.MolToPDBFile(pdb_mol, 'test.pdb')
-
-    B = pr.parsePDB('test.pdb')
-    B.setChids(['B' for _ in range(len(ligand.getResnames()))])
-    B.setResnums([1 for _ in range(len(ligand.getResnames()))])
-    A = input_protein.select('protein').copy() + B
-    # pr.writePDB('test2.pdb', A)
-
     ligname = lignames_set.pop()
     p = Params.from_mol(pdb_mol, name=ligname)
     p.dump(params_path) # type: ignore
@@ -150,7 +142,8 @@ class DesignCampaign:
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
         use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
-        boltz2_disable_kernels, boltz2_disable_nccl_p2p, objective_function, **kwargs
+        boltz2_disable_kernels, boltz2_disable_nccl_p2p, objective_function, fixed_identity_residue_indices, 
+        align_on_binding_site, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -163,6 +156,11 @@ class DesignCampaign:
         self.boltz2_disable_kernels = boltz2_disable_kernels
         self.boltz2_disable_nccl_p2p = boltz2_disable_nccl_p2p 
         self.objective_function = objective_function
+        self.align_on_binding_site = align_on_binding_site
+        self.fixed_identity_residue_indices = fixed_identity_residue_indices
+
+        if self.fixed_identity_residue_indices is not None:
+            print(f'Fixing residues: {self.fixed_identity_residue_indices}')
 
         if self.use_boltz_1x and self.predict_affinity:
             raise ValueError('Cannot use boltz1x with affinity prediction.')
@@ -216,36 +214,56 @@ class DesignCampaign:
             raise NotImplementedError(f"More than one input backbone not currently supported.")
 
         construct_helper_files(self.sdf_path, self.params_path, self.backbone_queue[0][0], ligand_smiles)
-
-        input_prot = pr.parsePDB(str(self.backbone_queue[0][0]))
-        input_prot_lig_heavy = input_prot.select('(not protein) and not element H')
-
         self.ligand_rmsd_mask_atoms = ligand_rmsd_mask_atoms
 
         assert self.sdf_path.exists(), f"Error creating SDF file {self.sdf_path}"
         assert self.params_path.exists(), f"Error creating params file {self.params_path}"
     
-    def sample_sequences(self, backbone_path: str) -> List[pr.AtomGroup]:
-        sampled_proteins = []
-        sampled_sequences = []
+    def sample_sequences(self, backbone_path: str) -> Tuple[List[pr.AtomGroup], List[str], List[float], List[float]]:
+        laser_nll, laser_bs_nll = [], []
+        sampled_proteins, sampled_sequences = [], []
         num_sampled = 0
         while num_sampled < self.sequences_sampled_per_backbone:
             remaining_samples = self.sequences_sampled_per_backbone - num_sampled
             num_seq_to_sample = min(remaining_samples, self.sequences_sampled_at_once)
 
-            sampling_output, full_atom_coords, nh_coords, sampled_probs, batch_data, protein_complex_data = _run_inference(self.model, self.model_params, Path(backbone_path), num_seq_to_sample, **self.laser_sampling_params)
-            protein_complex_data = protein_complex_data[0]
+            backbone_path_ = backbone_path
+            if self.fixed_identity_residue_indices is not None:
+                # NOTE: there might be a better way to do this so that we don't lose information stored in the b-factor columns of backbones that we sample, 
+                # but the important pLDDT information should be recorded in the log steps anyways.
+                protein = pr.parsePDB(str(backbone_path))
+                protein.setBetas(0.0)
+                fixed_selection = protein.select(self.fixed_identity_residue_indices)
+                if fixed_selection is None:
+                    raise ValueError(f'ProDy encounted an error selecting residues with selection string: {self.fixed_identity_residue_indices}')
+                fixed_selection.setBetas(1.0)
+                backbone_path_ = Path(backbone_path).parent / f'{Path(backbone_path).stem}_fixbeta.pdb'
+                pr.writePDB(str(backbone_path_), protein)
+                self.laser_sampling_params.update({'fix_beta': True})
+
+            sampling_output, full_atom_coords, nh_coords, sampled_probs, batch_data, protein_complex_data = _run_inference(self.model, self.model_params, Path(backbone_path_), num_seq_to_sample, **self.laser_sampling_params)
+            protein_complex_data = protein_complex_data[0] # type: ignore
             for idx in range(num_seq_to_sample):
                 curr_batch_mask = batch_data.batch_indices == idx
-                out_prot = output_protein_structure(full_atom_coords[curr_batch_mask], sampling_output.sampled_sequence_indices[curr_batch_mask], protein_complex_data.residue_identifiers, nh_coords[curr_batch_mask], sampled_probs[curr_batch_mask])
+
+                curr_probs = sampled_probs[curr_batch_mask]
+                nll = (-1 * torch.log10(curr_probs)).cpu().numpy().mean()
+                bs_nll = (-1 * torch.log10(sampled_probs[curr_batch_mask][batch_data.first_shell_ligand_contact_mask[curr_batch_mask]])).cpu().numpy().mean()
+
+                out_prot = output_protein_structure(full_atom_coords[curr_batch_mask], sampling_output.sampled_sequence_indices[curr_batch_mask], protein_complex_data.residue_identifiers, nh_coords[curr_batch_mask], curr_probs)
                 out_lig = output_ligand_structure(protein_complex_data.ligand_info)
+
                 out_complex = out_prot + out_lig
+                out_complex.setTitle('LASErMPNN/NISE Generated Protein')
                 sampled_proteins.append(out_complex)
                 sampled_sequences.append(out_prot.ca.getSequence())
 
+                laser_nll.append(nll)
+                laser_bs_nll.append(bs_nll)
+
             num_sampled += num_seq_to_sample
         
-        return sampled_proteins, sampled_sequences
+        return sampled_proteins, sampled_sequences, laser_nll, laser_bs_nll
 
     def identify_backbone_candidates(self, sorted_designs_boltz: Sequence[Path], sorted_designs_laser: Sequence[Path], sampled_backbone_paths: Sequence[Path], reduce_executable_path, reduce_hetdict_path):
         assert len(sorted_designs_laser) == len(sorted_designs_boltz), f"Error: different number of designs in" # {boltz_output_subdir} and {laser_output_subdir}."
@@ -275,7 +293,7 @@ class DesignCampaign:
             log_data['iptms'].append(design_iptm)
 
             try:
-                protein_rmsd, ligand_rmsd, laser_to_boltz_name_mapping = calc_rmsd(laser_prot, boltz_prot, self.ligand_smiles, self.rmsd_use_chirality, self.ligand_rmsd_mask_atoms)
+                protein_rmsd, ligand_rmsd, laser_to_boltz_name_mapping = calc_rmsd(laser_prot, boltz_prot, self.ligand_smiles, self.rmsd_use_chirality, self.ligand_rmsd_mask_atoms, align_on_binding_site=self.align_on_binding_site)
                 if len(laser_to_boltz_name_mapping) == 0:
                     raise ValueError('No atoms in common between laser and boltz structures.')
                 boltz_to_laser_name_mapping = {v: k for k, v in laser_to_boltz_name_mapping.items()}
@@ -353,7 +371,7 @@ class DesignCampaign:
         self.backbone_queue = sorted(self.backbone_queue, key=lambda x: float(x[1]), reverse=True)[:self.top_k]
 
         # Adds the backbone which has generated the best scoring pose if it's not in the queue already.
-        if self.keep_best_generator_backbone:
+        if self.keep_best_generator_backbone and len(self.backbone_to_best_generation) > 0:
             top_backbone = max(self.backbone_to_best_generation.items(), key=lambda x: x[1])
             print(top_backbone)
             if not (top_backbone[0] in [x[0] for x in self.backbone_queue]):
@@ -427,20 +445,6 @@ def predict_complex_structures(
         pass
 
 
-def compute_laser_scores(protein_sequences_list: Sequence[pr.AtomGroup]) -> Tuple[List[float], List[float]]:
-    full_sequence_scores = []
-    binding_site_scores = []
-
-    for protein in protein_sequences_list:
-        laser_score = (-1 * np.log10(protein.ca.getBetas())).mean()
-        laser_score_bs = (-1 * np.log10(protein.select('(same residue as ((protein and not element H) within 5.0 of ((not protein) and not element H))) and name CA').getBetas())).mean()
-
-        full_sequence_scores.append(laser_score)
-        binding_site_scores.append(laser_score_bs)
-
-    return full_sequence_scores, binding_site_scores
-
-
 def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
     design_campaign = DesignCampaign(**kwargs)
@@ -448,19 +452,18 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
     for iidx in range(design_campaign.num_iterations):
 
         # Run laser on all backbone queue inputs.
-        all_sampled_proteins = []
-        backbone_sample_indices = []
-        sampled_backbone_path = []
-        all_sampled_sequences = []
+        all_sampled_proteins, backbone_sample_indices, sampled_backbone_path, all_sampled_sequences = [], [], [], []
+        laser_nll, laser_bs_nll = [], []
         for bidx, (backbone_path, score) in enumerate(design_campaign.backbone_queue):
-            sampled_proteins, sampled_sequences = design_campaign.sample_sequences(backbone_path)
+            sampled_proteins, sampled_sequences, nlls, bs_nlls = design_campaign.sample_sequences(backbone_path)
             all_sampled_proteins.extend(sampled_proteins)
             backbone_sample_indices.extend([bidx] * len(sampled_proteins))
             sampled_backbone_path.extend([design_campaign.backbone_queue[bidx][0]] * len(sampled_proteins))
             all_sampled_sequences.extend(sampled_sequences)
+            laser_nll.extend(nlls)
+            laser_bs_nll.extend(bs_nlls)
 
-        # Compute laser confidences.
-        laser_nll, laser_bs_nll = compute_laser_scores(all_sampled_proteins)
+        # Sanity check output shapes before trying to fold or log anything.
         assert len(all_sampled_proteins) == len(backbone_sample_indices), f'Error in laser sampling: {len(all_sampled_proteins)} != {len(backbone_sample_indices)}'
         assert len(all_sampled_proteins) == len(laser_nll), f'Error in laser sampling: {len(all_sampled_proteins)} != {len(laser_nll)}'
         assert len(all_sampled_proteins) == len(laser_bs_nll), f'Error in laser sampling: {len(all_sampled_proteins)} != {len(laser_bs_nll)}'
@@ -567,7 +570,10 @@ if __name__ == "__main__":
         self_consistency_ligand_rmsd_threshold = 2.5,
         self_consistency_protein_rmsd_threshold = 1.5,
 
-        use_reduce_protonation = False, # If False, will use RDKit to protonate, these hydrogens will not preserve the input names.
+        align_on_binding_site = False, # If align on binding site is True, protein RMSD (and self_consistency_protein_rmsd_threshold above) becomes binding site RMSD. Useful if you have a large protein with floppy regions away from the ligand. Binding site is computed as residues with sidechain atoms within 5.0A of the ligand in the lasermpnn output structure.
+        fixed_identity_residue_indices = None, # An optional prody selection string of the form "resindex 0 2 3 4 5" or "resnum 1 3 5"...
+
+        use_reduce_protonation = False, # If False, will use RDKit to protonate, these hydrogens will not preserve the input names and aren't placed conditioned on the sidechains but REDUCE sometimes drops hydrogens if geometry changes outside of expected bounds.
         reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
         reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'), # Can set to None if use_reduce_protonation False
 
@@ -582,10 +588,10 @@ if __name__ == "__main__":
         use_boltz_conformer_potentials = True, # Use Boltz-x mode, this is almost always better.
         boltz2_predict_affinity = True if ('pbind' in objective_function) else False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
-        boltz2_disable_kernels = False, # Kernels may cause inconsistency on some devices, though this may be resolved as trifast is deprecated, see https://github.com/jwohlwend/boltz/issues/391
+        boltz2_disable_kernels = False, # Disables cuEquivariance kernels, this is likely not necessary.
         boltz2_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 
 
-        sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
+        sequences_sampled_per_backbone = 64 if not debug else 1 * len(boltz_inference_devices),
 
         laser_inference_device = boltz_inference_devices[0],
         laser_inference_dropout = True,

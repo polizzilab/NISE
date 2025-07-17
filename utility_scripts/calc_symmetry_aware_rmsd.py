@@ -1,5 +1,6 @@
 import io
 import os
+import warnings
 from pathlib import Path
 from rdkit import Chem
 from rdkit.Chem import AllChem
