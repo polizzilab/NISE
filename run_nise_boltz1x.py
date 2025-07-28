@@ -114,7 +114,8 @@ class DesignCampaign:
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, 
-        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, boltz1x_disable_nccl_p2p, **kwargs
+        boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, boltz1x_disable_nccl_p2p, 
+        burial_mask_alpha_hull_alpha, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -138,6 +139,7 @@ class DesignCampaign:
         self.ligand_rmsd_mask_atoms = ligand_rmsd_mask_atoms
         self.ligand_atoms_enforce_buried = ligand_atoms_enforce_buried
         self.ligand_atoms_enforce_exposed = ligand_atoms_enforce_exposed
+        self.burial_mask_alpha_hull_alpha = burial_mask_alpha_hull_alpha
         self.ligand_smiles = ligand_smiles
 
         self.laser_sampling_params = laser_sampling_params
@@ -250,8 +252,8 @@ class DesignCampaign:
             pr.writePDB(pdb_output_path, boltz_prot_only + boltz_lig_only)
 
             # Check ligand burial in boltz structure.
-            all_buried_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[atoms_enforced_buried_mask], num_rays=3)
-            none_buried_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[atoms_enforced_exposed_mask], num_rays=3)
+            all_buried_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[atoms_enforced_buried_mask], num_rays=5, alpha=self.burial_mask_alpha_hull_alpha)
+            none_buried_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[atoms_enforced_exposed_mask], num_rays=5, alpha=self.burial_mask_alpha_hull_alpha)
 
             if (all_buried_mask.all().item() and (not none_buried_mask.any().item())) or self.debug:
                 ligand_is_buried.append(True)
@@ -489,6 +491,7 @@ if __name__ == "__main__":
         boltz1x_disable_nccl_p2p = False, # On some systems with certain graphics cards, NCCL can hang indefinitely. This flag fixes this issue allowing running boltz / NISE with multiple GPUs. https://github.com/NVIDIA/nccl/issues/631 
 
         sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
+        burial_mask_alpha_hull_alpha = 9.0, # Set to a larger number for folds with wider pockets (ex: 7-helix bundle) (Ex: 100.0), see https://github.com/benf549/CARPdock/blob/main/visualize_hull.ipynb
 
         laser_inference_device = boltz_inference_devices[0],
         laser_inference_dropout = True,
