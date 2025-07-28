@@ -11,8 +11,10 @@ from pathlib import Path
 from collections import defaultdict
 warnings.filterwarnings("ignore")
 
-CURR_DIR_PATH = str(Path(os.path.abspath(__file__)).parent)
-LASER_PATH = str(Path(CURR_DIR_PATH) / 'LASErMPNN')
+# NOTE: If you move the run_nise*.py script, adjust the NISE_DIRECTORY_PATH
+NISE_DIRECTORY_PATH = str(Path(os.path.abspath(__file__)).parent)
+LASER_PATH = str(Path(NISE_DIRECTORY_PATH) / 'LASErMPNN')
+sys.path.append(NISE_DIRECTORY_PATH)
 
 import wandb
 import torch
@@ -132,6 +134,9 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     ligname = lignames_set.pop()
     p = Params.from_mol(pdb_mol, name=ligname)
     p.dump(params_path) # type: ignore
+
+    with open(Path(params_path).parent / '.gitignore', 'w') as f:
+        f.write('*')
 
 
 class DesignCampaign:
