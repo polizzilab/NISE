@@ -320,7 +320,6 @@ class DesignCampaign:
             boltz_lig_only.setResnames([self.ligand_3lc for _ in range(len(boltz_lig_only.getResnames()))])
             boltz_coords = boltz_lig_only.getCoords()
 
-            # burial_mask = np.array([x not in self.ligand_burial_mask_atoms for x in boltz_lig_only.getNames()])
             atoms_enforced_buried_mask = np.array([x in self.ligand_atoms_enforce_buried for x in boltz_lig_only.getNames()])
             atoms_enforced_exposed_mask = np.array([x in self.ligand_atoms_enforce_exposed for x in boltz_lig_only.getNames()])
 
@@ -565,7 +564,7 @@ if __name__ == "__main__":
         ligand_3lc = 'EXA', # Should match CCD if using reduce.
         ligand_rmsd_mask_atoms = {'C20', 'C21'}, # Atoms to IGNORE in RMSD calculation. 
         ligand_atoms_enforce_buried = {'O4', 'O2', 'N3', 'F1'}, # Atoms to enforce remain buried inside convex hull when selecting new backbones.
-        ligand_atoms_enforce_exposed = {'N2'}, # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones.
+        ligand_atoms_enforce_exposed = {'N2'}, # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones. I would suggest only using this for linker regions attached to your ligand or clearly exposed charged polar groups.
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
