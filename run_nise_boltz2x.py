@@ -136,7 +136,7 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
 
 class DesignCampaign:
     def __init__(self, 
-        model_checkpoint, input_dir, ligand_rmsd_mask_atoms, ligand_burial_mask_atoms, laser_inference_device, debug, ligand_3lc,
+        model_checkpoint, input_dir, ligand_rmsd_mask_atoms, ligand_atoms_enforce_buried, ligand_atoms_enforce_exposed, laser_inference_device, debug, ligand_3lc,
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
@@ -180,7 +180,8 @@ class DesignCampaign:
         self.top_k = num_top_backbones_per_round
 
         self.ligand_rmsd_mask_atoms = ligand_rmsd_mask_atoms
-        self.ligand_burial_mask_atoms = ligand_burial_mask_atoms
+        self.ligand_atoms_enforce_buried = ligand_atoms_enforce_buried 
+        self.ligand_atoms_enforce_exposed = ligand_atoms_enforce_exposed 
         self.ligand_smiles = ligand_smiles
 
         self.laser_sampling_params = laser_sampling_params
@@ -318,7 +319,11 @@ class DesignCampaign:
             boltz_lig_only.setNames([boltz_to_laser_name_mapping[x] for x in boltz_lig_only.getNames()])
             boltz_lig_only.setResnames([self.ligand_3lc for _ in range(len(boltz_lig_only.getResnames()))])
             boltz_coords = boltz_lig_only.getCoords()
-            burial_mask = np.array([x not in self.ligand_burial_mask_atoms for x in boltz_lig_only.getNames()])
+
+            # burial_mask = np.array([x not in self.ligand_burial_mask_atoms for x in boltz_lig_only.getNames()])
+            atoms_enforced_buried_mask = np.array([x in self.ligand_atoms_enforce_buried for x in boltz_lig_only.getNames()])
+            atoms_enforced_exposed_mask = np.array([x in self.ligand_atoms_enforce_exposed for x in boltz_lig_only.getNames()])
+
             pdb_output_path = str(boltz)
             pr.writePDB(pdb_output_path, boltz_prot_only + boltz_lig_only)
 
@@ -334,10 +339,11 @@ class DesignCampaign:
             confidence_data['design_ligand_plddt'] = design_ligand_plddt
             confidence_data['design_protein_plddt'] = design_protein_plddt
 
-            # Check ligand burial in boltz structure.
-            ligand_heavy_atom_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[burial_mask], num_rays=5)
+            # Check ligand burial constraints are obeyed in predicted structure.
+            all_buried_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[atoms_enforced_buried_mask], num_rays=5)
+            none_buried_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[atoms_enforced_exposed_mask], num_rays=5)
             
-            if ligand_heavy_atom_mask.all().item() or self.debug:
+            if (all_buried_mask.all().item() and (not none_buried_mask.any().item())) or self.debug:
                 log_data['ligand_is_buried'].append(True)
                 if (ligand_rmsd < self.self_consistency_ligand_rmsd_threshold and protein_rmsd < self.self_consistency_protein_rmsd_threshold) or self.debug:
 
@@ -558,7 +564,8 @@ if __name__ == "__main__":
 
         ligand_3lc = 'EXA', # Should match CCD if using reduce.
         ligand_rmsd_mask_atoms = {'C20', 'C21'}, # Atoms to IGNORE in RMSD calculation. 
-        ligand_burial_mask_atoms = {'N2', 'C5', 'C6', 'C7', 'O1', 'C2', 'C4', 'C8', 'C15', 'C14', 'C9', 'C3'}, # Atoms to IGNORE in burial calculation.
+        ligand_atoms_enforce_buried = {'O4', 'O2', 'N3', 'F1'}, # Atoms to enforce remain buried inside convex hull when selecting new backbones.
+        ligand_atoms_enforce_exposed = {'N2'}, # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones.
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
 
