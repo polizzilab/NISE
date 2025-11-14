@@ -39,7 +39,7 @@ You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.
 ### Generating input poses:
 
 While we would recommend following the protocol using COMBS to generate initial poses as outlined in our paper, decent starting poses may be generated using the workflow outlined [here using CARPdock,](https://github.com/benf549/CARPdock).
-Initializations from [BoltzDesign1](https://github.com/yehlincho/BoltzDesign1) will almost certainly work as well, but this remains untested.
+Initializations from [RFDiffusion2](https://github.com/RosettaCommons/RFdiffusion2), [BoltzDesign1](https://github.com/yehlincho/BoltzDesign1) or [BoltzGen](https://github.com/HannesStark/boltzgen) will almost certainly work as well, but how best to leverage these tools for ligand binder design remains untested.
 
 ### Running NISE:
 
