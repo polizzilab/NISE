@@ -1,4 +1,4 @@
-# Neural Iterative Selection Expansion (NISE) using LASErMPNN and Boltz-1x/Boltz-2x
+# Neural Iterative Selection Expansion (NISE) using LASErMPNN/LigandMPNN with Boltz-1x/Boltz-2x
 
 ![A NISE Trajectory demonstraing optimization of P(bind) and predicted affinity from Boltz-2](./images/boltz2_animation.gif)
 
@@ -30,10 +30,16 @@ pip install -Ue .
 
 cd ..
 tar -xvf hetdict.tar.gz
+
+cd ./LigandMPNN
+bash get_model_params.sh "./model_params"
 ```
 
 3) Activate your conda environment containing Boltz-1x or Boltz-2x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
 You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.py` respectively.
+
+4) Optionally, install LigandMPNN into a separate python environment (dependencies conflict with LASErMPNN) and update `./run_nise_boltz2x_ligandmpnn.py` with the path to your LigandMPNN python executable.
+With the ligandmpnn python environment activated, run `which python` to get the path to your LigandMPNN python executable and update the `ligandmpnn_python` parameter at the bottom of `./run_nise_boltz2x_ligandmpnn.py`.
 
 
 ### Generating input poses:
@@ -43,7 +49,7 @@ Initializations from [RFDiffusion2](https://github.com/RosettaCommons/RFdiffusio
 
 ### Running NISE:
 
-1) Create a PDB file containing your PROTONATED input ligand with CONECT records encoding bonds:
+1) Create a PDB file containing your PROTONATED input ligand with CONECT records encoding bonds (unless using NISE with LigandMPNN, then protonation is not necessary).:
 If you have a non-protonated ligand/are missing conect records, run `protonate_and_add_conect_records.py {input_path}.pdb {smiles_string} {output_path}.pdb`.
 WARNING: This will rename the ligand atoms, ligand chain, and resnum.
 
@@ -56,17 +62,23 @@ WARNING: This will rename the ligand atoms, ligand chain, and resnum.
 
 4) Update the params dictionary at the bottom of `./run_nise_boltz1x.py` with the path to your new input dir ex: (`input_dir = Path('./debug/')`).
 
+
 6) Update burial and RMSD atom sets and smiles string in `./run_nise_boltz1x.py`
+
 
 7) Update `boltz1x_executable_path` at bottom of `./run_nise_boltz1x.py`
 
+
 8) If you want to constrain the number of alanine and glycine residues predicted on the surface of the protein in secondary-structured regions, run `identify_surface_residues.ipynb` and update 'budget_residue_sele_string' in the params dictionary at the bottom of the run_nise_boltz script.
+
 
 To test out an example run:
 
-```bash
 
-# Protonated smiles string from ChemDraw.
+```bash
+conda activate lasermpnn
+
+# Use protonated smiles string from ChemDraw or OpenBabel prediction
 ./protonate_and_add_conect_records.py ./example_pdbs/16_pose26_en_-5p044_no_CG_top1_of_1_n4_00374_looped_master_6_gly_0001_trim_H_98.pdb "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O" ./example_pdbs/test_input_protonated_conect.pdb
 
 mkdir -p ./debug/input_backbones/
@@ -74,4 +86,16 @@ mkdir -p ./debug/input_backbones/
 cp ./example_pdbs/test_input_protonated_conect.pdb ./debug/input_backbones/
 
 ./run_nise_boltz1x.py
+```
+
+
+For a LigandMPNN example run:
+
+```bash
+conda activate lasermpnn
+
+mkdir -p ./debug/input_backbones/
+cp ./example_pdbs/02_apex_NISE_input-pose_00-seq_0980_model_0_rank_01.pdb ./debug/input_backbones/
+
+./run_nise_boltz2x_ligandmpnn.py
 ```
