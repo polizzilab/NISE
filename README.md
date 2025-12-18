@@ -39,6 +39,7 @@ bash get_model_params.sh "./model_params"
 You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.py` respectively.
 
 4) Optionally, install LigandMPNN into a separate python environment (dependencies conflict with LASErMPNN) and update `./run_nise_boltz2x_ligandmpnn.py` with the path to your LigandMPNN python executable.
+With the ligandmpnn python environment activated, run `which python` to get the path to your LigandMPNN python executable and update the `ligandmpnn_python` parameter at the bottom of `./run_nise_boltz2x_ligandmpnn.py`.
 
 
 ### Generating input poses:
