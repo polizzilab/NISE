@@ -137,7 +137,7 @@ class DesignCampaign:
         input_dir, ligand_rmsd_mask_atoms, ligand_atoms_enforce_buried, ligand_atoms_enforce_exposed, lmpnn_inference_device, debug, ligand_3lc,
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
         num_iterations, num_top_backbones_per_round, 
-        lmpnn_sequence_sample_temperature, lmpnn_number_of_batches, lmpnn_batch_size,
+        ligandmpnn_python, lmpnn_sequence_sample_temperature, lmpnn_number_of_batches, lmpnn_batch_size,
         sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, boltz2x_executable_path, 
         keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
@@ -157,6 +157,7 @@ class DesignCampaign:
         self.align_on_binding_site = align_on_binding_site
         self.fixed_identity_residue_indices = fixed_identity_residue_indices
 
+        self.ligandmpnn_python = ligandmpnn_python
         self.lmpnn_inference_device = lmpnn_inference_device
         self.lmpnn_sequence_sample_temperature = lmpnn_sequence_sample_temperature
         self.lmpnn_number_of_batches = lmpnn_number_of_batches
@@ -216,7 +217,7 @@ class DesignCampaign:
     def sample_sequences(self, backbone_path: Path, lmpnn_output_subdir: Path) -> Tuple[List[pr.AtomGroup], List[str], List[float], List[float]]:
         sample_command = f'cd LigandMPNN;'
         sample_command += f' CUDA_VISIBLE_DEVICES={self.lmpnn_inference_device.split(":")[-1]}'
-        sample_command += f' /nfs/polizzi/bfry/programs/miniconda3/envs/ligandmpnn_env/bin/python3.11 run.py --verbose 0 --model \'ligand_mpnn\' --pdb_path {backbone_path.absolute()} --out_folder {lmpnn_output_subdir.absolute()} --pack_side_chains 1 --number_of_packs_per_design 1 --pack_with_ligand_context 1'
+        sample_command += f' {self.ligandmpnn_python} run.py --verbose 0 --model \'ligand_mpnn\' --pdb_path {backbone_path.absolute()} --out_folder {lmpnn_output_subdir.absolute()} --pack_side_chains 1 --number_of_packs_per_design 1 --pack_with_ligand_context 1'
         sample_command += f' --temperature {self.lmpnn_sequence_sample_temperature}'
         sample_command += f' --number_of_batches {self.lmpnn_number_of_batches}'
         sample_command += f' --batch_size {self.lmpnn_batch_size}'
@@ -544,6 +545,7 @@ if __name__ == "__main__":
         # sequences_sampled_per_backbone = 64 if not debug else 1 * len(boltz_inference_devices),
         burial_mask_alpha_hull_alpha = 9.0, # Set to a larger number for folds with wider pockets (ex: 7-helix bundle) (Ex: 100.0), see https://github.com/benf549/CARPdock/blob/main/visualize_hull.ipynb
 
+        ligandmpnn_python = '/nfs/polizzi/bfry/programs/miniconda3/envs/ligandmpnn_env/bin/python3.11',
         lmpnn_sequence_sample_temperature = 0.5,
         lmpnn_number_of_batches = 8 if not debug else 1,
         lmpnn_batch_size = 8,
