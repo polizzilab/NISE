@@ -1,3 +1,6 @@
 [submodule "LASErMPNN"]
 	path = LASErMPNN
 	url = https://github.com/polizzilab/LASErMPNN.git
+[submodule "LigandMPNN"]
+	path = LigandMPNN
+	url = https://github.com/dauparas/LigandMPNN.git

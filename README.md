@@ -30,6 +30,9 @@ pip install -Ue .
 
 cd ..
 tar -xvf hetdict.tar.gz
+
+cd ./LigandMPNN
+bash get_model_params.sh "./model_params"
 ```
 
 3) Activate your conda environment containing Boltz-1x or Boltz-2x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
