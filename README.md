@@ -17,7 +17,7 @@ To run NISE, install the dependencies (LASErMPNN and Boltz-2) using either of th
 
 1) Install `uv` if your system does not already have it installed. [See here for instructions on how to do this](https://docs.astral.sh/uv/getting-started/installation/).
 
-2) Add `uv` to your path. For example, edit your `/.bashrc` to contain the line `export PATH="~/.local/bin/uv:$PATH"`.
+2) Add `uv` to your path. For example, edit your `~/.bashrc` to contain the line `export PATH="~/.local/bin/uv:$PATH"`.
 
 3) Run the setup.sh with the command `bash setup.sh`
 
