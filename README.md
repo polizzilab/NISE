@@ -1,4 +1,5 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/polizzilab/NISE/blob/main/NISE_LASErMPNN.ipynb)
+
 # Neural Iterative Selection Expansion (NISE) using LASErMPNN/LigandMPNN with Boltz-1x/Boltz-2x
 
 ![A NISE Trajectory demonstraing optimization of P(bind) and predicted affinity from Boltz-2](./images/boltz2_animation.gif)
@@ -10,27 +11,31 @@ Jointly optimize the sequence and structure of a protein-ligand binding pose wit
 
 ### Installing NISE Environment
 
-To run NISE, install the conda environment for LASErMPNN and a separate conda environment which contains Boltz-1x or Boltz-2x:
+To run NISE, install the dependencies (LASErMPNN and Boltz-2) using either of the methods below:
 
-1) Install [LASErMPNN](https://github.com/polizzilab/LASErMPNN) conda environment
+##### 1. (Recommended) Create a Virtual Environment (venv) inside this repository.
 
-2) Install ProDy from source into lasermpnn conda environment. 
-There is currently an issue with the conda installable ProDy and distance-based selections which are used within NISE. 
-This can be resolved for now by installing ProDy from source.
+1) Install `uv` if your system does not already have it installed. [See here for instructions on how to do this](https://docs.astral.sh/uv/getting-started/installation/).
 
-Just follow this set of commands inside the NISE project directory after `git clone`-ing the project and installing the lasermpnn environment.
+2) Add `uv` to your path. For example, edit your `/.bashrc` to contain the line `export PATH="~/.local/bin/uv:$PATH"`.
+
+3) Run the setup.sh with the command `bash setup.sh`
+
+This will install a new python environment containing the dependencies for LASErMPNN located at `./.venv/bin/python` (the setup.sh script will print out the install location so you can verify this.)
+
+
+##### 2. Using separately install LASErMPNN and Boltz conda environments.
+
+1) Install [LASErMPNN](https://github.com/polizzilab/LASErMPNN) conda environment following the instructions in the README.md at the linked repository.
+
+2) Follow this set of commands inside the NISE project directory after `git clone`-ing the project and installing the lasermpnn environment.
+
 ```bash
 git submodule update --init --recursive
 
-conda activate lasermpnn
-
-git clone git@github.com:prody/ProDy.git
-cd ProDy
-python setup.py build_ext --inplace --force
-pip install -Ue .
-
-cd ..
 tar -xvf hetdict.tar.gz
+
+conda activate lasermpnn
 
 cd ./LigandMPNN
 bash get_model_params.sh "./model_params"
@@ -42,11 +47,11 @@ You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.
 4) Optionally, install LigandMPNN into a separate python environment (dependencies conflict with LASErMPNN) and update `./run_nise_boltz2x_ligandmpnn.py` with the path to your LigandMPNN python executable.
 With the ligandmpnn python environment activated, run `which python` to get the path to your LigandMPNN python executable and update the `ligandmpnn_python` parameter at the bottom of `./run_nise_boltz2x_ligandmpnn.py`.
 
-
 ### Generating input poses:
 
-While we would recommend following the protocol using COMBS to generate initial poses as outlined in our paper, decent starting poses may be generated using the workflow outlined [here using CARPdock,](https://github.com/benf549/CARPdock). CARPdock is likely the fastest way to get a good starting point and has been experimentally validated on some unpublished test targets.
-Initializations from [RFDiffusion2](https://github.com/RosettaCommons/RFdiffusion2), [BoltzDesign1](https://github.com/yehlincho/BoltzDesign1) or [BoltzGen](https://github.com/HannesStark/boltzgen) will almost certainly work as well, but how best to leverage these tools for ligand binder design remains untested.
+We recommend generating NISE input poses using the workflow outlined [here using CARPdock,](https://github.com/benf549/CARPdock). 
+CARPdock is likely the fastest way to get a good starting point and has been experimentally validated on some (currently) unpublished test targets to generate binders with high experimentally determined affinities.
+Initializations from RFDiffusion2/3, BoltzDesign1 or BoltzGen will almost certainly work as well, but how best to leverage these tools for ligand binder design remains untested. Generating de novo fold topologies will likely decrease experimental success rates as well.
 
 ### Running NISE:
 

@@ -50,6 +50,9 @@ def compute_objective_function(confidence_metrics_dict: dict, objective_function
     if objective_function == 'ligand_plddt':
         return confidence_metrics_dict['design_ligand_plddt']
 
+    elif objective_function == 'ligand_plddt_and_iptm':
+        return confidence_metrics_dict['design_ligand_plddt'] + confidence_metrics_dict['iptm']
+
     elif objective_function == 'iptm':
         return confidence_metrics_dict['iptm']
 
@@ -563,40 +566,40 @@ if __name__ == "__main__":
 
     params = dict(
         debug = (debug := True),
-        use_wandb = (use_wandb := (True and not debug)),
+        use_wandb = (use_wandb := False),
 
         input_dir = Path('./debug/').resolve(),
 
-        ligand_3lc = 'EXA', # Should match CCD if using reduce.
-        ligand_rmsd_mask_atoms = {'C20', 'C21'}, # Atoms to IGNORE in RMSD calculation. 
-        ligand_atoms_enforce_buried = {'O4', 'O2', 'N3', 'F1'}, # Atoms to enforce remain buried inside convex hull when selecting new backbones.
-        ligand_atoms_enforce_exposed = {'N2'}, # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones. I would suggest only using this for linker regions attached to your ligand or clearly exposed charged polar groups.
+        ligand_3lc = 'GG2', # Should match CCD code if using reduce.
+        ligand_rmsd_mask_atoms = set(), # Atoms to IGNORE in RMSD calculation. 
+        ligand_atoms_enforce_buried = set(), # Atoms to enforce remain buried inside convex hull when selecting new backbones.
+        ligand_atoms_enforce_exposed = set(), # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones. I would suggest only using this for linker regions attached to your ligand or clearly exposed charged polar groups.
         laser_sampling_params = laser_sampling_params,
-        ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
+        ligand_smiles = 'COC1=CC=C(C=C1)N2C3=C(CCN(C3=O)C4=CC=C(C=C4)N5CCCCC5=O)C(=N2)C(=O)N',
 
-        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
+        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'ligand_plddt_and_iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
         keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
         rmsd_use_chirality = False, # Will fail to compute RMSD on mismatched chirality ligands, might be bugged...
         self_consistency_ligand_rmsd_threshold = 2.5,
-        self_consistency_protein_rmsd_threshold = 1.5,
+        self_consistency_protein_rmsd_threshold = 2.5,
 
         align_on_binding_site = False, # If align on binding site is True, protein RMSD (and self_consistency_protein_rmsd_threshold above) becomes binding site RMSD. Useful if you have a large protein with floppy regions away from the ligand. Binding site is computed as residues with sidechain atoms within 5.0A of the ligand in the lasermpnn output structure.
         fixed_identity_residue_indices = None, # An optional prody selection string of the form "resindex 0 2 3 4 5" or "resnum 1 3 5"...
 
         use_reduce_protonation = False, # If False, will use RDKit to protonate, these hydrogens will not preserve the input names and aren't placed conditioned on the sidechains but REDUCE sometimes drops hydrogens if geometry changes outside of expected bounds.
         reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
-        reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'), # Can set to None if use_reduce_protonation False
+        reduce_executable_path = None, # Can set to None if use_reduce_protonation False
 
-        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
+        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_nothing_heldout.pt',
 
-        num_iterations = 100,
+        num_iterations = 35,
         num_top_backbones_per_round = 3,
         sequences_sampled_at_once = 30,
 
-        boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2/bin/boltz',
-        boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
+        boltz2x_executable_path = str((Path(NISE_DIRECTORY_PATH) / '.venv/bin/boltz').absolute()),
+        boltz_inference_devices = (boltz_inference_devices := ['cuda:0',]), # a list of multiple torch-style device strings
         use_boltz_conformer_potentials = True, # Use Boltz-x mode, this is almost always better.
         boltz2_predict_affinity = True if ('pbind' in objective_function) else False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1

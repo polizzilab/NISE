@@ -48,6 +48,9 @@ def compute_objective_function(confidence_metrics_dict: dict, objective_function
     if objective_function == 'ligand_plddt':
         return confidence_metrics_dict['design_ligand_plddt']
 
+    elif objective_function == 'ligand_plddt_and_iptm':
+        return confidence_metrics_dict['design_ligand_plddt'] + confidence_metrics_dict['iptm']
+
     elif objective_function == 'iptm':
         return confidence_metrics_dict['iptm']
 
@@ -509,18 +512,17 @@ if __name__ == "__main__":
 
     params = dict(
         debug = (debug := True),
-        use_wandb = (use_wandb := (True and not debug)),
+        use_wandb = (use_wandb := False),
 
         input_dir = Path('./debug/').resolve(),
 
-        ligand_3lc = 'LIG', # renames ligand residue in output pdbs.
+        ligand_3lc = 'GG2', # renames ligand residue in output pdbs.
         ligand_rmsd_mask_atoms = set(), # Atoms to IGNORE in RMSD calculation. 
         ligand_atoms_enforce_buried = set(), # Atoms to enforce remain buried inside convex hull when selecting new backbones.
         ligand_atoms_enforce_exposed = set(), # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones. I would suggest only using this for linker regions attached to your ligand or clearly exposed charged polar groups.
-        ligand_smiles = "COC1=CC=C(N2C3=C(C(C(N)=O)=N2)CCN(C4=CC=C(N5CCCCC5=O)C=C4)C3=O)C=C1",
+        ligand_smiles = 'COC1=CC=C(C=C1)N2C3=C(CCN(C3=O)C4=CC=C(C=C4)N5CCCCC5=O)C(=N2)C(=O)N',
 
-        # objective_function = (objective_function := 'ligand_plddt_and_pbind'), # Current options: {'ligand_plddt', 'iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
-        objective_function = (objective_function := 'ligand_plddt_and_pbind'), # Current options: {'ligand_plddt', 'iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
+        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'ligand_plddt_and_iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
         keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
@@ -531,12 +533,12 @@ if __name__ == "__main__":
         align_on_binding_site = False, # If align on binding site is True, protein RMSD (and self_consistency_protein_rmsd_threshold above) becomes binding site RMSD. Useful if you have a large protein with floppy regions away from the ligand. Binding site is computed as residues with sidechain atoms within 5.0A of the ligand in the lmpnnmpnn output structure.
         fixed_identity_residue_indices = None, # An optional prody selection string of the form "resindex 0 2 3 4 5" or "resnum 1 3 5"...
 
-        num_iterations = 25,
+        num_iterations = 35,
         num_top_backbones_per_round = 3,
         sequences_sampled_at_once = 30,
 
-        boltz2x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz2_retry/bin/boltz',
-        boltz_inference_devices = (boltz_inference_devices := ['cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
+        boltz2x_executable_path = str((Path(NISE_DIRECTORY_PATH) / '.venv/bin/boltz').absolute()),
+        boltz_inference_devices = (boltz_inference_devices := ['cuda:0', ]), # a list of multiple torch-style device strings
         use_boltz_conformer_potentials = True, # Use Boltz-x mode, this is almost always better.
         boltz2_predict_affinity = True if ('pbind' in objective_function) else False,
         use_boltz_1x = False, # Run the same script using --model boltz-1, multi-device inference with this seems bugged with boltz v2.1.1
@@ -550,6 +552,7 @@ if __name__ == "__main__":
         lmpnn_sequence_sample_temperature = 0.5,
         lmpnn_number_of_batches = 8 if not debug else 1,
         lmpnn_batch_size = 8,
+        # Multiply lmpnn_number_of_batches and lmpnn_batch_size for total number of sequences per backbone 
         lmpnn_inference_device = boltz_inference_devices[0],
     )
     if use_wandb:
