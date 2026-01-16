@@ -24,7 +24,9 @@ To run NISE, install the dependencies (LASErMPNN and Boltz-2) using either of th
 This will install a new python environment containing the dependencies for LASErMPNN located at `./.venv/bin/python` (the setup.sh script will print out the install location so you can verify this.)
 
 
-##### 2. Using separately install LASErMPNN and Boltz conda environments.
+##### 2. Using separately installed LASErMPNN and Boltz conda environments.
+
+You may wish to not install Boltz-2 again if it is already installed on your HPC. You can separately install LASErMPNN in its own conda environment setup the NISE repo following the instructions below.
 
 1) Install [LASErMPNN](https://github.com/polizzilab/LASErMPNN) conda environment following the instructions in the README.md at the linked repository.
 
@@ -44,7 +46,11 @@ bash get_model_params.sh "./model_params"
 3) Activate your conda environment containing Boltz-1x or Boltz-2x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
 You will need to update this path in `run_nise_boltz1x.py` or `run_nise_boltz2x.py` respectively.
 
-4) Optionally, install LigandMPNN into a separate python environment (dependencies conflict with LASErMPNN) and update `./run_nise_boltz2x_ligandmpnn.py` with the path to your LigandMPNN python executable.
+### Running NISE with LigandMPNN 
+
+You may wish to run NISE trajectories using LigandMPNN in place of LASErMPNN. 
+
+To do this, install LigandMPNN into a separate python environment (its dependencies conflict with LASErMPNN) and update `./run_nise_boltz2x_ligandmpnn.py` with the path to your LigandMPNN python executable.
 With the ligandmpnn python environment activated, run `which python` to get the path to your LigandMPNN python executable and update the `ligandmpnn_python` parameter at the bottom of `./run_nise_boltz2x_ligandmpnn.py`.
 
 ### Generating input poses:
@@ -82,16 +88,15 @@ To test out an example run:
 
 
 ```bash
-conda activate lasermpnn
 
 # Use protonated smiles string from ChemDraw or OpenBabel prediction
-./protonate_and_add_conect_records.py ./example_pdbs/16_pose26_en_-5p044_no_CG_top1_of_1_n4_00374_looped_master_6_gly_0001_trim_H_98.pdb "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O" ./example_pdbs/test_input_protonated_conect.pdb
+./.venv/bin/python ./protonate_and_add_conect_records.py ./example_pdbs/02_apex_NISE_input-pose_00-seq_0980_model_0_rank_01.pdb "COC1=CC=C(C=C1)N2C3=C(CCN(C3=O)C4=CC=C(C=C4)N5CCCCC5=O)C(=N2)C(=O)N" ./example_pdbs/test_input_protonated_conect.pdb
 
 mkdir -p ./debug/input_backbones/
 
 cp ./example_pdbs/test_input_protonated_conect.pdb ./debug/input_backbones/
 
-./run_nise_boltz1x.py
+./run_nise_boltz2x.py
 ```
 
 
