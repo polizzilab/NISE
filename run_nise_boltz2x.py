@@ -151,7 +151,7 @@ class DesignCampaign:
         use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
         boltz2_disable_kernels, boltz2_disable_nccl_p2p, objective_function, fixed_identity_residue_indices, 
-        align_on_binding_site, burial_mask_alpha_hull_alpha, boltz2_cache_directory, **kwargs
+        align_on_binding_site, burial_mask_alpha_hull_alpha, boltz2_cache_directory, boltz2_sampling_steps, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -162,6 +162,7 @@ class DesignCampaign:
         self.predict_affinity = boltz2_predict_affinity
         self.use_reduce_protonation = use_reduce_protonation
         self.boltz2_cache_directory = boltz2_cache_directory
+        self.boltz2_sampling_steps = boltz2_sampling_steps
         self.boltz2_disable_kernels = boltz2_disable_kernels
         self.boltz2_disable_nccl_p2p = boltz2_disable_nccl_p2p 
         self.objective_function = objective_function
@@ -431,10 +432,10 @@ class DesignCampaign:
 
 def predict_complex_structures(
     boltz_inputs_dir, boltz2x_executable_path, boltz_inference_devices, 
-    boltz_output_dir, use_potentials, use_boltz_1x, disable_kernels, disable_nccl_p2p, boltz2_cache_directory, debug
+    boltz_output_dir, use_potentials, use_boltz_1x, disable_kernels, disable_nccl_p2p, boltz2_cache_directory, boltz2_sampling_steps, debug
 ):
     device_ints = [x.split(':')[-1] for x in boltz_inference_devices]
-    command = f'{boltz2x_executable_path} predict {boltz_inputs_dir} --devices {len(device_ints)} --out_dir {boltz_output_dir} --output_format pdb --override'
+    command = f'{boltz2x_executable_path} predict {boltz_inputs_dir} --devices {len(device_ints)} --out_dir {boltz_output_dir} --output_format pdb --override --sampling_steps {int(boltz2_sampling_steps)} --sampling_steps_affinity {int(boltz2_sampling_steps)}'
     command = f'CUDA_VISIBLE_DEVICES={",".join(device_ints)} {command}'
 
     if disable_nccl_p2p:
@@ -521,7 +522,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
             predict_complex_structures(
                 boltz_input_dir, design_campaign.boltz2x_executable_path, design_campaign.boltz_inference_devices, 
                 sampling_subdir, design_campaign.use_boltz_conformer_potentials, design_campaign.use_boltz_1x, 
-                design_campaign.boltz2_disable_kernels, design_campaign.boltz2_disable_nccl_p2p, design_campaign.boltz2_cache_directory, design_campaign.debug
+                design_campaign.boltz2_disable_kernels, design_campaign.boltz2_disable_nccl_p2p, design_campaign.boltz2_cache_directory, design_campaign.boltz2_sampling_steps, design_campaign.debug
             )
             curr_tries += 1
 
@@ -604,6 +605,7 @@ if __name__ == "__main__":
 
         boltz2x_executable_path = str((Path(NISE_DIRECTORY_PATH) / '.venv/bin/boltz').absolute()),
         boltz2_cache_directory = None, # Optional path to the boltz weights, can be used to avoid redownloading weights that have already been cached on your machine not in the default location.
+        boltz2_sampling_steps = 200,
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0',]), # a list of multiple torch-style device strings
         use_boltz_conformer_potentials = True, # Use Boltz-x mode, this is almost always better.
         boltz2_predict_affinity = True if ('pbind' in objective_function) else False,
