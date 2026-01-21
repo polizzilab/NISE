@@ -1,4 +1,4 @@
-### This directory contains a full worked example of a design campaign:
+### This directory contains a full worked example of a design campaign which was used to create an 80 pM binder to Apixaban in an NTF2 fold:
 
 Which starts from initial docking through filtering and ranking final designs.
 
