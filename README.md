@@ -110,3 +110,5 @@ cp ./example_pdbs/02_apex_NISE_input-pose_00-seq_0980_model_0_rank_01.pdb ./debu
 
 ./run_nise_boltz2x_ligandmpnn.py
 ```
+
+### For a complete example design campaign (generated an 80 pM Apixaban binder), check out the contents of [example_design_campaign](./example_design_campaign/README.md)
