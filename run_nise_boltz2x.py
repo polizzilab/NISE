@@ -559,10 +559,16 @@ if __name__ == "__main__":
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
         'disable_pbar': True, 'disabled_residues_list': ['X', 'C'], # Disables cysteine sampling by default.
         # ==================================================================================================== 
-        # Optional: Pass a prody selection string of the form ('resnum 1 or resnum 3 or resnum 5...') to 
-        # specify residues over which to constrain the sampling of ALA or GLY residues. 
-        # This string can be generated using './identify_surface_residues.ipynb'
+        # If constrain_ala_gly_sampling_to_exposed_non_secondary_structure is True (recommended), 
+        # the ala_budget and gly_budget parameters are 
+        # used to constrain the sampling of ALA and GLY residues to exposed non-secondary structured residues.
+        # You can override the specific residues with the budget_residue_sele_string parameter (not recommended).
+        # If constrain_ala_gly_sampling_to_exposed_non_secondary_structure is False and budget_residue_sele_string is None,
+        # no constraints are applied to the sampling of ALA and GLY residues.
+        # The reason we suggest doing this is to constrain the generated sequences to the manifold of sequences that are likely to exist in nature 
+        # and not exploiting a propensity of structure prediction networks to predict structure in alanine rich sequences
         # ==================================================================================================== 
+        'constrain_ala_gly_sampling_to_exposed_non_secondary_structure': True,
         'budget_residue_sele_string': None, 
         'ala_budget': 4, 'gly_budget': 0, # May sample up to 4 Ala and 0 Gly over the selected region if not None.
         'disable_charged_fs': True, # Disables sampling D,E,K,R residues for buried residues around the ligand. 
@@ -570,7 +576,7 @@ if __name__ == "__main__":
 
 
     params = dict(
-        debug = (debug := True),
+        debug = (debug := False),
         use_wandb = (use_wandb := False),
 
         input_dir = Path('./debug/').resolve(),

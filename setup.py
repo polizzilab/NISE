@@ -48,6 +48,7 @@ subprocess.check_call(
         "matplotlib",
         "rdkit-to-params",
         "seaborn",
+        "pydssp",
         "jupyter",
         "plotly",
         "pykeops",
