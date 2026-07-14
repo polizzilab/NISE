@@ -4,7 +4,7 @@
 
 ![A NISE Trajectory demonstraing optimization of P(bind) and predicted affinity from Boltz-2](./images/boltz2_animation.gif)
 
-### Introduced in the paper [Zero-shot design of drug-binding proteins via neural selection-expansion](https://www.biorxiv.org/content/10.1101/2025.04.22.649862v1)!
+### Introduced in the paper [Zero-shot design of drug-binding proteins via neural iterative selection-expansion](https://www.nature.com/articles/s41586-026-10670-w)!
 
 ___
 Check out our [interactive Google Colab notebook](https://colab.research.google.com/github/polizzilab/NISE/blob/main/NISE_LASErMPNN.ipynb) to get acquainted with the protocol. Novel protein-ligand poses can be generated with [CARPdock](https://github.com/benf549/CARPdock) which we provide a separate [interactive Google Colab notebook for running](https://colab.research.google.com/github/benf549/CARPdock/blob/main/run_CARPdock.ipynb).
