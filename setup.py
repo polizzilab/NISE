@@ -57,7 +57,7 @@ subprocess.check_call(
         "tqdm",
         "rdkit",
         "py3Dmol",
-        "openbabel-wheel",
+        "openbabel>=3.2.0",
         "boltz[cuda]==2.2.1",
         "freesasa",
     ],
