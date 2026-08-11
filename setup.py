@@ -25,7 +25,9 @@ venv_py = os.path.join(venv_dir, "bin", "python")
 
 # 1) Create virtualenv if needed
 if not os.path.isdir(venv_dir):
-    subprocess.check_call(["uv", "venv", venv_dir])
+    # Pin the interpreter: several deps (pykeops, openbabel-wheel, boltz[cuda]==2.2.1) have no wheels
+    # for the newest Python that uv would otherwise pick (e.g. 3.13), so the install below fails.
+    subprocess.check_call(["uv", "venv", "--python", "3.11", venv_dir])
 
 print("Venv python:", venv_py)
 
