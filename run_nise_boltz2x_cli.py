@@ -52,6 +52,9 @@ OBJECTIVE_FUNCTIONS = [
     "pbind",
     "ligand_plddt_and_pbind",
     "iptm_and_pbind",
+    "iptm_consensus",
+    "ligand_plddt_consensus",
+    "pbind_and_protenix_iptm",
 ]
 
 
@@ -139,6 +142,23 @@ def build_parser() -> argparse.ArgumentParser:
     nise_grp.add_argument(
         "--objective-function", choices=OBJECTIVE_FUNCTIONS, default="ligand_plddt",
     )
+
+    protenix_grp = p.add_argument_group("Protenix structural-confidence rescore (optional)")
+    protenix_grp.add_argument(
+        "--use-protenix-rescore", action=argparse.BooleanOptionalAction, default=False,
+        help="Fold each design again with Protenix as an independent structural cross-check "
+             "(anti reward-hacking). Required by the *_consensus / pbind_and_protenix_iptm objectives.",
+    )
+    protenix_grp.add_argument(
+        "--protenix-executable", default="protenix",
+        help="Protenix CLI, invoked as `protenix pred -i ... -o ... -n <model>`.",
+    )
+    protenix_grp.add_argument("--protenix-model-name", default="protenix_base_default_v1.0.0")
+    protenix_grp.add_argument(
+        "--protenix-use-msa", action=argparse.BooleanOptionalAction, default=False,
+        help="Fold Protenix single-sequence (default) to match NISE's Boltz inputs (msa: empty).",
+    )
+
     nise_grp.add_argument(
         "--drop-rmsd-mask-atoms-from-ligand-plddt-calc",
         action=argparse.BooleanOptionalAction, default=True,
@@ -512,6 +532,11 @@ def build_params(args: argparse.Namespace, input_dir: Path) -> dict:
 
         laser_inference_device=laser_device,
         laser_inference_dropout=args.laser_inference_dropout,
+
+        use_protenix_rescore=args.use_protenix_rescore,
+        protenix_executable_path=args.protenix_executable,
+        protenix_model_name=args.protenix_model_name,
+        protenix_use_msa=args.protenix_use_msa,
     )
     return params
 

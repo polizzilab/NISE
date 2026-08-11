@@ -65,6 +65,18 @@ def compute_objective_function(confidence_metrics_dict: dict, objective_function
     elif objective_function == 'iptm_and_pbind':
         return confidence_metrics_dict['iptm'] + confidence_metrics_dict['affinity_probability_binary']
 
+    # Consensus objectives cross-check Boltz against a second Protenix fold and need
+    # use_protenix_rescore. Protenix has no affinity head, so this is a structural
+    # (iptm / pLDDT) check, not a second binding signal.
+    elif objective_function == 'iptm_consensus':
+        return min(confidence_metrics_dict['iptm'], confidence_metrics_dict['protenix_iptm'])
+
+    elif objective_function == 'ligand_plddt_consensus':
+        return min(confidence_metrics_dict['design_ligand_plddt'], confidence_metrics_dict['protenix_ligand_plddt'])
+
+    elif objective_function == 'pbind_and_protenix_iptm':
+        return confidence_metrics_dict['affinity_probability_binary'] + confidence_metrics_dict['protenix_iptm']
+
     else:
         raise ValueError(f'Objective_function strategy {objective_function} is not implemented.')
 
@@ -74,6 +86,20 @@ def get_boltz_yaml_boilerplate(sequence: str, smiles: str, predict_affinity: boo
     if predict_affinity:
         boltz_yaml += "properties:\n  - affinity:\n      binder: B\n"
     return boltz_yaml
+
+
+def get_protenix_input_entry(name: str, sequence: str, smiles: str) -> dict:
+    """One Protenix inference-JSON entry: protein binder (chain 0) + ligand (chain 1).
+    `name` becomes the Protenix sample name and output filename, so it must match the
+    Boltz design stem to line results back up."""
+    return {
+        "name": name,
+        "covalent_bonds": [],
+        "sequences": [
+            {"proteinChain": {"count": 1, "sequence": sequence, "modifications": []}},
+            {"ligand": {"ligand": smiles, "count": 1}},
+        ],
+    }
         
 
 def check_input(dir_path: Path, model_weights_path: Path):
@@ -151,7 +177,8 @@ class DesignCampaign:
         use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
         boltz2_disable_kernels, boltz2_disable_nccl_p2p, objective_function, fixed_identity_residue_indices, 
-        align_on_binding_site, burial_mask_alpha_hull_alpha, boltz2_cache_directory, boltz2_sampling_steps, **kwargs
+        align_on_binding_site, burial_mask_alpha_hull_alpha, boltz2_cache_directory, boltz2_sampling_steps,
+        use_protenix_rescore=False, protenix_executable_path='protenix', protenix_model_name='protenix_base_default_v1.0.0', protenix_use_msa=False, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -177,6 +204,14 @@ class DesignCampaign:
 
         if 'pbind' in self.objective_function and (not self.predict_affinity):
             raise ValueError(f"predict_affinity must be True to use objective function {self.objective_function}")
+
+        self.use_protenix_rescore = use_protenix_rescore
+        self.protenix_executable_path = protenix_executable_path
+        self.protenix_model_name = protenix_model_name
+        self.protenix_use_msa = protenix_use_msa
+        self.protenix_metrics_by_name = {}
+        if ('consensus' in self.objective_function or 'protenix' in self.objective_function) and (not self.use_protenix_rescore):
+            raise ValueError(f"use_protenix_rescore must be True to use objective function {self.objective_function}")
 
         self.rmsd_use_chirality = rmsd_use_chirality
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
@@ -291,6 +326,10 @@ class DesignCampaign:
             confidence_data = {'laser_output_pdb_path': laser, 'boltz_output_pdb_path': boltz}
             with (boltz.parent / f'confidence_{boltz.stem}.json').open('r') as f:
                 confidence_data.update(json.load(f))
+
+            # Protenix metrics for this design, matched by Boltz stem (set in main()).
+            if self.use_protenix_rescore:
+                confidence_data.update(self.protenix_metrics_by_name.get(boltz.parent.stem, {}))
 
             design_iptm = confidence_data['iptm']
             design_bind_probability, design_predicted_affinity = torch.nan, torch.nan
@@ -464,6 +503,53 @@ def predict_complex_structures(
         pass
 
 
+def predict_complex_structures_protenix(
+    protenix_input_json, protenix_output_dir, protenix_executable_path,
+    protenix_model_name, inference_devices, debug, use_msa=False
+):
+    """Refold every design with Protenix (one batched call over the input JSON) as an
+    independent structural check -- Protenix has no affinity head, so confidence only.
+    use_msa=False folds single-sequence to match NISE's Boltz inputs. Protenix resolves
+    `-n <model>` to ~/checkpoint/<model>.pt."""
+    device_ints = [x.split(':')[-1] for x in inference_devices]
+    command = (
+        f'{protenix_executable_path} pred '
+        f'-i {protenix_input_json} -o {protenix_output_dir} -n {protenix_model_name} '
+        f'--use_msa {str(use_msa).lower()} --use_default_params true'
+    )
+    command = f'CUDA_VISIBLE_DEVICES={",".join(device_ints)} {command}'
+    print(command)
+    try:
+        subprocess.run(
+            command, shell=True, check=False,
+            stdout=subprocess.DEVNULL if not debug else None,
+            stderr=subprocess.DEVNULL if not debug else None,
+        )
+    except:
+        print('Protenix crashed! This might be fine, trying to recover...')
+        pass
+
+
+def parse_protenix_summaries(protenix_output_dir, ligand_chain_index: int = 1) -> dict:
+    """Collect top-ranked Protenix metrics into {name: {protenix_iptm,
+    protenix_ligand_plddt, protenix_ranking_score}}. Globs recursively for the
+    sample_0 summaries (robust to Protenix's output layout); chain_plddt is per-chain
+    in input order (ligand last), 0-1, matching NISE's Boltz ligand pLDDT."""
+    metrics_by_name = {}
+    for summary_path in Path(protenix_output_dir).rglob('*_summary_confidence_sample_0.json'):
+        name = summary_path.name.replace('_summary_confidence_sample_0.json', '')
+        with summary_path.open('r') as f:
+            summary = json.load(f)
+        chain_plddt = summary['chain_plddt']
+        lig_idx = ligand_chain_index if ligand_chain_index < len(chain_plddt) else -1
+        metrics_by_name[name] = {
+            'protenix_iptm': summary['iptm'],
+            'protenix_ligand_plddt': chain_plddt[lig_idx],
+            'protenix_ranking_score': summary['ranking_score'],
+        }
+    return metrics_by_name
+
+
 def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
     design_campaign = DesignCampaign(**kwargs)
@@ -528,6 +614,27 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
         assert all([x.exists() for x in all_boltz_model_paths]), f"Error: not all boltz predictions were written to disk."
 
+        # Optional Protenix rescore: refold this round's designs and stash metrics
+        # keyed by Boltz stem for identify_backbone_candidates to inject. Names line up
+        # 1:1 with all_sampled_sequences (same order the Boltz inputs were written).
+        if design_campaign.use_protenix_rescore:
+            protenix_output_dir = sampling_subdir / 'protenix_outputs'
+            protenix_input_json = sampling_subdir / 'protenix_inputs.json'
+            protenix_entries = [
+                get_protenix_input_entry(name, seq, design_campaign.ligand_smiles)
+                for name, seq in zip(all_boltz_input_path_names, all_sampled_sequences)
+            ]
+            with protenix_input_json.open('w') as f:
+                json.dump(protenix_entries, f)
+            predict_complex_structures_protenix(
+                protenix_input_json, protenix_output_dir, design_campaign.protenix_executable_path,
+                design_campaign.protenix_model_name, design_campaign.boltz_inference_devices, design_campaign.debug,
+                design_campaign.protenix_use_msa,
+            )
+            design_campaign.protenix_metrics_by_name = parse_protenix_summaries(protenix_output_dir)
+            missing = [n for n in all_boltz_input_path_names if n not in design_campaign.protenix_metrics_by_name]
+            assert not missing, f"Protenix rescore missing outputs for {len(missing)} designs, e.g. {missing[:3]}"
+
         # Identify any new backbone candidates.
         sorted_designs_laser, sorted_designs_rosetta, log_data = design_campaign.identify_backbone_candidates(all_boltz_model_paths, all_laser_output_paths, sampled_backbone_path, reduce_executable_path, reduce_hetdict_path)
 
@@ -588,7 +695,7 @@ if __name__ == "__main__":
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = 'COC1=CC=C(C=C1)N2C3=C(CCN(C3=O)C4=CC=C(C=C4)N5CCCCC5=O)C(=N2)C(=O)N',
 
-        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'ligand_plddt_and_iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
+        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'ligand_plddt_and_iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}. Consensus options requiring use_protenix_rescore=True: {'iptm_consensus', 'ligand_plddt_consensus', 'pbind_and_protenix_iptm'}. Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
         keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.
@@ -612,6 +719,11 @@ if __name__ == "__main__":
         boltz2x_executable_path = str((Path(NISE_DIRECTORY_PATH) / '.venv/bin/boltz').absolute()),
         boltz2_cache_directory = None, # Optional path to the boltz weights, can be used to avoid redownloading weights that have already been cached on your machine not in the default location.
         boltz2_sampling_steps = 200,
+
+        use_protenix_rescore = False, # Refold each design with Protenix as an independent structural cross-check; enables the *_consensus / pbind_and_protenix_iptm objectives. Adds a Protenix install + weights and a second fold per round.
+        protenix_executable_path = 'protenix', # Protenix CLI entrypoint; invoked as `protenix pred -i <inputs.json> -o <out_dir> -n <model_name>`.
+        protenix_model_name = 'protenix_base_default_v1.0.0',
+        protenix_use_msa = False, # Fold single-sequence to match NISE's Boltz inputs (msa: empty); a de novo binder has no natural MSA. MSA search would also be slow + network-dependent.
         boltz_inference_devices = (boltz_inference_devices := ['cuda:0',]), # a list of multiple torch-style device strings
         use_boltz_conformer_potentials = True, # Use Boltz-x mode, this is almost always better.
         boltz2_predict_affinity = True if ('pbind' in objective_function) else False,
