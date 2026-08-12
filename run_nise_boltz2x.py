@@ -65,6 +65,15 @@ def compute_objective_function(confidence_metrics_dict: dict, objective_function
     elif objective_function == 'iptm_and_pbind':
         return confidence_metrics_dict['iptm'] + confidence_metrics_dict['affinity_probability_binary']
 
+    # Selectivity objectives need counter_target_smiles: each design is also folded
+    # against the off-target ligand(s) and the worst-case off-target metrics injected
+    # as offtarget_*. They reward on-target binding minus off-target binding.
+    elif objective_function == 'iptm_selectivity':
+        return confidence_metrics_dict['iptm'] - confidence_metrics_dict['offtarget_iptm']
+
+    elif objective_function == 'pbind_selectivity':
+        return confidence_metrics_dict['affinity_probability_binary'] - confidence_metrics_dict['offtarget_affinity_probability_binary']
+
     else:
         raise ValueError(f'Objective_function strategy {objective_function} is not implemented.')
 
@@ -151,7 +160,8 @@ class DesignCampaign:
         use_reduce_protonation, keep_input_backbone_in_queue, keep_best_generator_backbone, use_boltz_conformer_potentials,
         boltz2_predict_affinity, drop_rmsd_mask_atoms_from_ligand_plddt_calc, use_boltz_1x, 
         boltz2_disable_kernels, boltz2_disable_nccl_p2p, objective_function, fixed_identity_residue_indices, 
-        align_on_binding_site, burial_mask_alpha_hull_alpha, boltz2_cache_directory, boltz2_sampling_steps, **kwargs
+        align_on_binding_site, burial_mask_alpha_hull_alpha, boltz2_cache_directory, boltz2_sampling_steps,
+        counter_target_smiles=None, **kwargs
     ):
         self.debug = debug
         self.ligand_3lc = ligand_3lc
@@ -177,6 +187,11 @@ class DesignCampaign:
 
         if 'pbind' in self.objective_function and (not self.predict_affinity):
             raise ValueError(f"predict_affinity must be True to use objective function {self.objective_function}")
+
+        self.counter_target_smiles = counter_target_smiles or []
+        self.offtarget_metrics_by_name = {}
+        if 'selectivity' in self.objective_function and (not self.counter_target_smiles):
+            raise ValueError(f"counter_target_smiles must be set to use objective function {self.objective_function}")
 
         self.rmsd_use_chirality = rmsd_use_chirality
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
@@ -291,6 +306,10 @@ class DesignCampaign:
             confidence_data = {'laser_output_pdb_path': laser, 'boltz_output_pdb_path': boltz}
             with (boltz.parent / f'confidence_{boltz.stem}.json').open('r') as f:
                 confidence_data.update(json.load(f))
+
+            # Off-target binding for this design (set in main() when counter targets given).
+            if self.counter_target_smiles:
+                confidence_data.update(self.offtarget_metrics_by_name.get(boltz.parent.stem, {}))
 
             design_iptm = confidence_data['iptm']
             design_bind_probability, design_predicted_affinity = torch.nan, torch.nan
@@ -464,6 +483,68 @@ def predict_complex_structures(
         pass
 
 
+def parse_boltz_binding_metrics(boltz_model_path: Path, predict_affinity: bool) -> dict:
+    """Read iptm (and affinity_probability_binary if predicted) for one Boltz design."""
+    metrics = {}
+    with (boltz_model_path.parent / f'confidence_{boltz_model_path.stem}.json').open('r') as f:
+        metrics['iptm'] = json.load(f)['iptm']
+    metrics['affinity_probability_binary'] = float('nan')
+    if predict_affinity:
+        affinity_path = boltz_model_path.parent / f'affinity_{boltz_model_path.stem.replace("_model_0", "")}.json'
+        if affinity_path.exists():
+            with affinity_path.open('r') as f:
+                metrics['affinity_probability_binary'] = json.load(f)['affinity_probability_binary']
+    return metrics
+
+
+def fold_counter_targets(design_campaign, sampling_subdir, design_names, sequences) -> dict:
+    """Fold every design against each counter-target ligand and return the worst-case
+    (strongest) off-target binding per design, keyed by Boltz stem. Off-target
+    structures are only scored -- they never become backbones."""
+    worst = {}
+    for ct_idx, ct_smiles in enumerate(design_campaign.counter_target_smiles):
+        input_dir = sampling_subdir / f'offtarget_{ct_idx}_boltz_inputs'
+        input_dir.mkdir(exist_ok=True)
+        for name, seq in zip(design_names, sequences):
+            (input_dir / f'{name}.yaml').write_text(
+                get_boltz_yaml_boilerplate(seq, ct_smiles, design_campaign.predict_affinity))
+
+        model_paths = [
+            sampling_subdir / f'boltz_results_offtarget_{ct_idx}_boltz_inputs' / 'predictions' / n / f'{n}_model_0.pdb'
+            for n in design_names
+        ]
+        tries = 0
+        while tries < 10 and not all(p.exists() for p in model_paths):
+            if tries != 0:
+                print(f'Off-target {ct_idx}: not all boltz predictions completed.. retrying...')
+                time.sleep(30)
+            predict_complex_structures(
+                input_dir, design_campaign.boltz2x_executable_path, design_campaign.boltz_inference_devices,
+                sampling_subdir, design_campaign.use_boltz_conformer_potentials, design_campaign.use_boltz_1x,
+                design_campaign.boltz2_disable_kernels, design_campaign.boltz2_disable_nccl_p2p,
+                design_campaign.boltz2_cache_directory, design_campaign.boltz2_sampling_steps, design_campaign.debug,
+            )
+            tries += 1
+        assert all(p.exists() for p in model_paths), f"Off-target {ct_idx}: not all boltz predictions written."
+
+        for name, path in zip(design_names, model_paths):
+            m = parse_boltz_binding_metrics(path, design_campaign.predict_affinity)
+            prev = worst.get(name)
+            if prev is None:
+                worst[name] = {
+                    'offtarget_iptm': m['iptm'],
+                    'offtarget_affinity_probability_binary': m['affinity_probability_binary'],
+                }
+            else:
+                # worst case = strongest off-target binding; nanmax ignores designs
+                # whose off-target affinity JSON was missing rather than propagating nan.
+                prev['offtarget_iptm'] = float(np.nanmax([prev['offtarget_iptm'], m['iptm']]))
+                if design_campaign.predict_affinity:
+                    prev['offtarget_affinity_probability_binary'] = float(np.nanmax(
+                        [prev['offtarget_affinity_probability_binary'], m['affinity_probability_binary']]))
+    return worst
+
+
 def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
     design_campaign = DesignCampaign(**kwargs)
@@ -528,6 +609,13 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
         assert all([x.exists() for x in all_boltz_model_paths]), f"Error: not all boltz predictions were written to disk."
 
+        # Optional counter-target fold: also fold each design against the off-target
+        # ligand(s) and key the worst-case off-target binding by Boltz stem, so
+        # identify_backbone_candidates can inject it for the selectivity objectives.
+        if design_campaign.counter_target_smiles:
+            design_campaign.offtarget_metrics_by_name = fold_counter_targets(
+                design_campaign, sampling_subdir, all_boltz_input_path_names, all_sampled_sequences)
+
         # Identify any new backbone candidates.
         sorted_designs_laser, sorted_designs_rosetta, log_data = design_campaign.identify_backbone_candidates(all_boltz_model_paths, all_laser_output_paths, sampled_backbone_path, reduce_executable_path, reduce_hetdict_path)
 
@@ -587,8 +675,9 @@ if __name__ == "__main__":
         ligand_atoms_enforce_exposed = set(), # Atoms to enforce remain exposed relative to the convex hull when selecting new backbones. I would suggest only using this for linker regions attached to your ligand or clearly exposed charged polar groups.
         laser_sampling_params = laser_sampling_params,
         ligand_smiles = 'COC1=CC=C(C=C1)N2C3=C(CCN(C3=O)C4=CC=C(C=C4)N5CCCCC5=O)C(=N2)C(=O)N',
+        counter_target_smiles = [], # Off-target ligand SMILES for selectivity objectives (iptm_selectivity, pbind_selectivity). Each design is also folded against these; the objective rewards on-target minus worst-case off-target binding. Adds a fold per counter-target per round.
 
-        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'ligand_plddt_and_iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}, Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
+        objective_function = (objective_function := 'ligand_plddt'), # Current options: {'ligand_plddt', 'iptm', 'ligand_plddt_and_iptm', 'pbind', 'ligand_plddt_and_pbind', 'iptm_and_pbind'}. Selectivity options requiring counter_target_smiles: {'iptm_selectivity', 'pbind_selectivity'}. Check the top of the file for implemented strategies, if you find an alternative strategy to work well please make a git commit so others can test it out as well!
         drop_rmsd_mask_atoms_from_ligand_plddt_calc = True,
         keep_input_backbone_in_queue = False,
         keep_best_generator_backbone = True, # The highest scoring pose may not necessarily generate higher scoring poses, keeps the pose that has generated the best poses after the first iteration in the queue if not already the best scoring pose.

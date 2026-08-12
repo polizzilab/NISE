@@ -52,6 +52,8 @@ OBJECTIVE_FUNCTIONS = [
     "pbind",
     "ligand_plddt_and_pbind",
     "iptm_and_pbind",
+    "iptm_selectivity",
+    "pbind_selectivity",
 ]
 
 
@@ -104,6 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
     io_grp.add_argument(
         "--smiles", type=str, required=True,
         help="Ligand SMILES (must match the protonation state of --input-pdb).",
+    )
+    io_grp.add_argument(
+        "--counter-target-smiles", type=str, nargs="*", default=[],
+        help="Off-target ligand SMILES for the selectivity objectives; each design "
+             "is also folded against these and the worst-case off-target binding "
+             "is penalised (iptm_selectivity, pbind_selectivity).",
     )
     io_grp.add_argument(
         "--output-dir", type=Path, required=True,
@@ -475,6 +483,7 @@ def build_params(args: argparse.Namespace, input_dir: Path) -> dict:
         ligand_atoms_enforce_exposed=args.ligand_atoms_enforce_exposed,
         laser_sampling_params=laser_sampling_params,
         ligand_smiles=args.smiles,
+        counter_target_smiles=args.counter_target_smiles,
 
         objective_function=args.objective_function,
         drop_rmsd_mask_atoms_from_ligand_plddt_calc=args.drop_rmsd_mask_atoms_from_ligand_plddt_calc,
