@@ -207,6 +207,23 @@ cp ./example_pdbs/02_apex_NISE_input-pose_00-seq_0980_model_0_rank_01.pdb ./debu
 ./run_nise_boltz2x_ligandmpnn.py
 ```
 
+### Ranking finished designs by buried unsatisfied polar atoms (BUNs)
+
+The loop above expands each round on ligand confidence (pLDDT). To select final leads, the paper reranks
+the self-consistent designs by a linear combination of buried, non-hydrogen-bonded polar atoms of the
+protein and ligand (the reranking behind the EPIC and PiB selections, Extended Data Fig. 3).
+`utility_scripts/rerank_by_buns.py` applies that step to a completed run using
+[bunsalyze](https://github.com/polizzilab/bunsalyze):
+
+```bash
+python utility_scripts/rerank_by_buns.py <nise_output_dir> "<ligand_SMILES>"
+```
+
+It scores each self-consistent predicted complex under the run and writes `reranked_by_buns.csv` sorted by
+fewest BUNs (`buns_score = 2 * ligand_buns + protein_buns`). Complexes that fail scoring are kept with a
+`buns_error` column rather than dropped. `bunsalyze` is an optional companion, installed only if you use
+this step.
+
 ### Advanced container documentation
 
 For details on building or customizing the Apptainer/Singularity container, see
