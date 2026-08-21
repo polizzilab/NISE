@@ -259,8 +259,11 @@ class DesignCampaign:
                 curr_batch_mask = batch_data.batch_indices == idx
 
                 curr_probs = sampled_probs[curr_batch_mask]
-                nll = (-1 * torch.log10(curr_probs)).cpu().numpy().mean()
-                bs_nll = (-1 * torch.log10(sampled_probs[curr_batch_mask][batch_data.first_shell_ligand_contact_mask[curr_batch_mask]])).cpu().numpy().mean()
+                # exclude fixed (fix_beta) positions: their probability is recorded as 0 and would send the mean NLL to inf
+                designed = ~batch_data.chain_mask[curr_batch_mask].bool()
+                bs_mask = batch_data.first_shell_ligand_contact_mask[curr_batch_mask] & designed
+                nll = (-1 * torch.log10(curr_probs[designed])).cpu().numpy().mean()
+                bs_nll = (-1 * torch.log10(curr_probs[bs_mask])).cpu().numpy().mean()
 
                 out_prot = output_protein_structure(full_atom_coords[curr_batch_mask], sampling_output.sampled_sequence_indices[curr_batch_mask], protein_complex_data.residue_identifiers, nh_coords[curr_batch_mask], curr_probs)
                 out_lig = output_ligand_structure(protein_complex_data.ligand_info)
